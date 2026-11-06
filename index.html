@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Audio Geology Web Study</title>
+<style>body { margin: 0; font-size: 14px; } [hidden] { display: none !important; }</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Martian+Mono:wght@300;400;500&family=Hanken+Grotesk:wght@400;500&display=swap">
+<style>
+/* Layout: a full-bleed terrain canvas with an instrument layer on top —
+   title top-left, parameters top-right, two readouts (signal, feedback field) bottom-left.
+   Same three-pane idea as the Geo-Oscilloscope Layout TOP: rule, memory, consequence. */
+:root {
+  --bg: #e6e9e6;          /* weathered slate paper */
+  --ink: #1b2120;         /* basalt */
+  --muted: #5f6a67;
+  --panel: rgba(244, 246, 244, 0.86);
+  --line: rgba(27, 33, 32, 0.14);
+  --accent: #b4561c;      /* iron oxide */
+  --accent-soft: rgba(180, 86, 28, 0.14);
+  --field-lo: #f2f4f2;
+  --field-hi: #1b2120;
+  --font-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1312; --ink: #dfe5e1; --muted: #8b9692;
+    --panel: rgba(21, 26, 25, 0.84); --line: rgba(223, 229, 225, 0.13);
+    --accent: #ef8f45; --accent-soft: rgba(239, 143, 69, 0.16);
+    --field-lo: #101413; --field-hi: #f0d9b8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1312; --ink: #dfe5e1; --muted: #8b9692;
+  --panel: rgba(21, 26, 25, 0.84); --line: rgba(223, 229, 225, 0.13);
+  --accent: #ef8f45; --accent-soft: rgba(239, 143, 69, 0.16);
+  --field-lo: #101413; --field-hi: #f0d9b8;
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); overflow: hidden; }
+#stage { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+
+.hud {
+  position: fixed; inset: 0; pointer-events: none;
+  display: grid; grid-template-rows: auto 1fr auto; gap: 12px;
+  padding-block: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.hud > * { min-width: 0; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.title { pointer-events: auto; max-width: 30rem; display: grid; gap: 6px; }
+.eyebrow, .label, .foot, .chip, .kernel {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 4.2vw, 46px); line-height: 1; letter-spacing: -0.01em; text-wrap: balance; }
+h1 em { color: var(--accent); }
+.lede { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); max-width: 34ch; }
+
+#pane { pointer-events: auto; width: 290px; max-width: 100%;
+  --tp-base-background-color: var(--panel);
+  --tp-base-shadow-color: transparent;
+  --tp-base-font-family: var(--font-mono);
+  --tp-container-background-color: var(--accent-soft);
+  --tp-container-background-color-hover: var(--accent-soft);
+  --tp-container-background-color-focus: var(--accent-soft);
+  --tp-container-background-color-active: var(--accent-soft);
+  --tp-container-foreground-color: var(--ink);
+  --tp-button-background-color: var(--ink);
+  --tp-button-background-color-hover: var(--accent);
+  --tp-button-background-color-focus: var(--accent);
+  --tp-button-background-color-active: var(--accent);
+  --tp-button-foreground-color: var(--bg);
+  --tp-input-background-color: var(--line);
+  --tp-input-background-color-hover: var(--accent-soft);
+  --tp-input-background-color-focus: var(--accent-soft);
+  --tp-input-background-color-active: var(--accent-soft);
+  --tp-input-foreground-color: var(--ink);
+  --tp-label-foreground-color: var(--muted);
+  --tp-groove-foreground-color: var(--line);
+  --tp-monitor-background-color: var(--line);
+  --tp-monitor-foreground-color: var(--ink);
+}
+#pane .tp-rotv { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid var(--line); }
+
+.bottom { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.card {
+  pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  padding: 10px; display: grid; gap: 8px; min-width: 0;
+}
+.card .label { color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
+.card .label b { font-weight: 500; color: var(--accent); }
+#signalCanvas { display: block; width: 220px; height: 120px; max-width: 100%; }
+.filter-body { display: flex; gap: 10px; align-items: stretch; }
+#fieldWin { width: 120px; height: 120px; flex: none; position: relative; outline: 1px solid var(--line); }
+#fieldWin span { position: absolute; left: 4px; font-family: var(--font-mono); font-size: 9px; color: var(--accent); letter-spacing: 0.04em; }
+#fieldWin .now { bottom: 3px; } #fieldWin .old { top: 3px; }
+.kernel-wrap { display: grid; gap: 6px; align-content: start; }
+.kernel { display: grid; grid-template-columns: repeat(3, 3.6em); gap: 2px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.kernel span { padding: 3px 0; text-align: center; background: var(--line); border-radius: 2px; }
+.kernel span.center { background: var(--accent-soft); color: var(--accent); }
+.foot { text-transform: none; letter-spacing: 0.02em; line-height: 1.5; }
+
+.source { pointer-events: auto; display: grid; gap: 8px; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button {
+  font: 500 11px/1 var(--font-mono); letter-spacing: 0.03em; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 9px 13px; cursor: pointer;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.seg button:hover { border-color: var(--accent); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.seg button:focus-visible, #pane :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#status { font-family: var(--font-mono); font-size: 10px; color: var(--muted); max-width: 46ch; line-height: 1.5; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; background: var(--panel); }
+
+@media (max-width: 640px) {
+  #pane { width: 100%; }
+  #signalCanvas { width: 150px; height: 84px; }
+  #fieldWin { width: 84px; height: 84px; }
+  .kernel { grid-template-columns: repeat(3, 3.2em); }
+  .lede { display: none; }
+  .foot { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="Audio-driven terrain. Drag to orbit, scroll or pinch to zoom."></canvas>
+
+<div class="hud">
+  <div class="top">
+    <header class="title">
+      <div class="eyebrow">Pixel Rhythms Labs · Audio Geology · web study 01</div>
+      <h1>Signal → Filter → <em>World</em></h1>
+      <p class="lede">The Ferrofluid terrain law, rebuilt in three.js. Every ridge traces back to the signal or its filtered memory.</p>
+    </header>
+    <div id="pane"></div>
+  </div>
+  <div></div>
+  <div class="bottom">
+    <section class="card" aria-label="Signal readout">
+      <div class="label">Signal <b>CHOP → TOP</b></div>
+      <canvas id="signalCanvas" width="440" height="240"></canvas>
+      <div class="foot">256 columns · spectrum after gain, lag, resample</div>
+    </section>
+    <section class="card" aria-label="Feedback field readout">
+      <div class="label">Filter <b>feedback field</b></div>
+      <div class="filter-body">
+        <div id="fieldWin"><span class="old" id="ageLabel">−4.3 s</span><span class="now">now</span></div>
+        <div class="kernel-wrap">
+          <div class="foot" style="display:block">3×3 kernel</div>
+          <div class="kernel" id="kernel"></div>
+        </div>
+      </div>
+      <div class="foot" id="fieldFoot">R32F · 256 × 256</div>
+    </section>
+    <div class="source">
+      <div class="seg" role="group" aria-label="Signal source">
+        <button id="srcTest" aria-pressed="true">Test signal</button>
+        <button id="srcFile" aria-pressed="false">Audio file…</button>
+        <button id="srcMic" aria-pressed="false">Microphone</button>
+        <button id="playBtn" hidden>Pause</button>
+      </div>
+      <input id="fileInput" type="file" accept="audio/*" hidden>
+      <div class="chips"><span class="chip" id="fpsChip">— fps</span><span class="chip" id="fmtChip">field —</span></div>
+      <div id="status">A silent built-in spectrum is driving the terrain. Load an audio file to use your own.</div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+    "three-custom-shader-material/vanilla": "https://cdn.jsdelivr.net/npm/three-custom-shader-material@6.4.0/vanilla/three-custom-shader-material.es.js",
+    "tweakpane": "https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js"
+  }
+}
+</script>
+
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+//  Audio Geology · web study 01 — Ferrofluid
+//
+//  The same chain as the TouchDesigner network, top to bottom:
+//
+//    SIGNAL   Audio File In → (Analyser does the Adder: stereo → mono) → Spectrum
+//             → Math (gain) → Lag/Filter → Resample → CHOP to TOP (one 256-px row)
+//    FILTER   Feedback TOP (two float render targets, swapped every frame)
+//             → Translate → Blur (a 3×3 Convolve) → Level → Composite new row
+//    WORLD    Grid (256 × 256 verts) displaced by the field → normals from the field
+//             → PBR material → environment light → render
+//
+//  In TD the network runs itself every frame. Here, animate() at the bottom is
+//  that cook: it calls each stage in order, once per frame.
+// ─────────────────────────────────────────────────────────────────────────────
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import CustomShaderMaterial from 'three-custom-shader-material/vanilla';
+import { Pane } from 'tweakpane';
+
+const N = 256;          // field resolution (pixels per side) = grid resolution (verts per side)
+const SIZE = 10;        // world size of the terrain, in scene units
+const BINS = 512;       // analyser bins (fftSize 1024)
+
+// The parameter panel. Same role as a COMP's custom parameters.
+const P = {
+  gain: 1.15, lag: 0.55, resample: 0.65,                      // Signal
+  flow: 1, blur: 0.75, step: 1, memory: 0.996, gamma: 1.0, contrast: 1.0,  // Filter
+  height: 2.4, metal: 0.55, wire: false,                      // World
+};
+
+// ── Renderer, scene, camera ─────────────────────────────────────────────────
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 8.2, 15.5);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, -0.4, -1.4);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 4; controls.maxDistance = 30;
+
+// Environment light: a procedural room baked into a reflection map (TD: Environment Light COMP).
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.8;
+const sun = new THREE.DirectionalLight(0xfff1dc, 2.2);   // low raking light so ridges read
+sun.position.set(-6, 4, 2);
+scene.add(sun);
+
+// ── SIGNAL ──────────────────────────────────────────────────────────────────
+// The row texture: 256 × 1 floats. This IS the CHOP to TOP: each column is a sample.
+const signalRow = new Float32Array(N);       // after gain + lag + resample (what gets drawn)
+const lagged = new Float32Array(BINS);       // Lag CHOP state, one value per bin
+const bins = new Float32Array(BINS);         // raw spectrum, 0..1
+const signalTex = new THREE.DataTexture(signalRow, N, 1, THREE.RedFormat, THREE.FloatType);
+signalTex.minFilter = signalTex.magFilter = THREE.NearestFilter;
+signalTex.needsUpdate = true;
+
+let audio = { ctx: null, analyser: null, node: null, buffer: null, mode: 'test', playing: false, startAt: 0, offset: 0 };
+const dbBuf = new Float32Array(BINS);
+
+function ensureAudio() {
+  if (audio.ctx) return audio.ctx;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = BINS * 2;
+  analyser.smoothingTimeConstant = 0;        // we do our own Lag below, where you can see it
+  analyser.minDecibels = -100; analyser.maxDecibels = -20;
+  audio.ctx = ctx; audio.analyser = analyser;
+  return ctx;
+}
+
+// Built-in test signal: a silent, made-up spectrum (a kick at 120 BPM, a drifting
+// tone, off-beat hats) so the terrain moves before any audio is loaded.
+function testSpectrum(t) {
+  const beat = (t * 2) % 1;                          // 120 BPM
+  const kick = Math.exp(-beat * 7);
+  const hat = Math.exp(-((t * 2 + 0.5) % 1) * 18);
+  const tone = 60 + 40 * Math.sin(t * 0.35) + 18 * Math.sin(t * 1.3);
+  for (let i = 0; i < BINS; i++) {
+    const kickBand = kick * 0.95 * Math.exp(-((i - 3) ** 2) / 10);
+    const toneBand = 0.55 * Math.exp(-((i - tone) ** 2) / 30) + 0.3 * Math.exp(-((i - tone * 2) ** 2) / 60);
+    const hatBand = hat * 0.35 * Math.exp(-((i - 300) ** 2) / 4000);
+    const floor = 0.06 * (0.5 + 0.5 * Math.sin(i * 0.7 + t * 3.1)) * Math.exp(-i / 200);
+    bins[i] = kickBand + toneBand + hatBand + floor;
+  }
+}
+
+function readSpectrum(t) {
+  if (audio.mode === 'test' || !audio.analyser) { testSpectrum(t); return; }
+  audio.analyser.getFloatFrequencyData(dbBuf);                   // decibels
+  const lo = audio.analyser.minDecibels, hi = audio.analyser.maxDecibels;
+  for (let i = 0; i < BINS; i++) bins[i] = Math.max(0, (dbBuf[i] - lo) / (hi - lo));  // normalize 0..1
+}
+
+function cookSignal(t) {
+  readSpectrum(t);
+  // Math CHOP (gain) + Lag CHOP. Lag is a one-pole low-pass: keep `lag` of the old value.
+  for (let i = 0; i < BINS; i++) lagged[i] = lagged[i] * P.lag + bins[i] * P.gain * (1 - P.lag);
+  // Resample CHOP: 512 bins → 256 columns. Linear spacing squeezes the bass into a few
+  // columns; log spacing gives each octave equal width. The slider blends the two.
+  const minB = 1, maxB = 420;
+  for (let x = 0; x < N; x++) {
+    const u = x / (N - 1);
+    const b = (1 - P.resample) * (minB + u * (maxB - minB)) + P.resample * (minB * Math.pow(maxB / minB, u));
+    const i0 = Math.floor(b), f = b - i0;
+    signalRow[x] = lagged[i0] * (1 - f) + lagged[Math.min(i0 + 1, BINS - 1)] * f;
+  }
+  signalTex.needsUpdate = true;                                  // upload the row to the GPU
+}
+
+// ── FILTER ──────────────────────────────────────────────────────────────────
+// Feedback TOP: you can't read and write the same texture in one pass, so there are
+// two textures. Each frame reads A, writes B, then they swap. That swap is the loop.
+const floatOK = renderer.extensions.has('EXT_color_buffer_float');
+const fieldType = floatOK ? THREE.FloatType : THREE.HalfFloatType;   // 32-bit where the GPU allows
+const rtOpts = { type: fieldType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter,
+  magFilter: THREE.NearestFilter, depthBuffer: false, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping };
+let rtA = new THREE.WebGLRenderTarget(N, N, rtOpts);
+let rtB = new THREE.WebGLRenderTarget(N, N, rtOpts);
+
+// A full-screen quad + orthographic camera: the standard way to run a TOP-style pass.
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quadGeo = new THREE.PlaneGeometry(2, 2);
+
+const kernel = new Array(9).fill(0);
+const simMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uPrev: { value: null }, uSignal: { value: signalTex },
+    uTexel: { value: new THREE.Vector2(1 / N, 1 / N) },
+    uFlow: { value: P.flow }, uStep: { value: P.step }, uK: { value: kernel },
+    uMemory: { value: P.memory }, uGamma: { value: P.gamma }, uContrast: { value: P.contrast },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D uPrev;     // last frame's field  (Feedback TOP input)
+    uniform sampler2D uSignal;   // this frame's row    (CHOP to TOP)
+    uniform vec2  uTexel;        // size of one pixel in uv units
+    uniform float uFlow;         // Translate TOP: rows of history pushed back per frame
+    uniform float uStep;         // Blur TOP "sample step": spacing between kernel taps
+    uniform float uK[9];         // the 3×3 kernel weights
+    uniform float uMemory;       // Level TOP brightness: how much history survives a frame
+    uniform float uGamma;
+    uniform float uContrast;
+    varying vec2 vUv;
+
+    void main() {
+      // 1 · Translate — read the old field from uFlow rows closer to the front edge,
+      //     so everything moves one step further back in time.
+      vec2 src = vUv - vec2(0.0, uTexel.y * uFlow);
+
+      // 2 · Convolve — every pixel looks at its 3×3 neighbourhood. With blur weights
+      //     this is the Blur TOP; with other weights it's an edge or a custom law.
+      float h = 0.0;
+      int k = 0;
+      for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+          vec2 o = vec2(float(x), float(y)) * uTexel * uStep;
+          h += uK[k] * texture2D(uPrev, src + o).r;
+          k++;
+        }
+      }
+
+      // 3 · Level — part of the simulation, not a grade on top of it. It runs every
+      //     frame, so its effect compounds with the age of each row.
+      h *= uMemory;
+      h = (h - 0.5) * uContrast + 0.5;
+      h = pow(max(h, 0.0), 1.0 / uGamma);
+      h = min(h, 4.0);                      // safety ceiling so the loop can't blow up
+
+      // 4 · Composite — the newest signal row is written at the front edge.
+      float sig = texture2D(uSignal, vec2(vUv.x, 0.5)).r;
+      float front = step(vUv.y, uTexel.y * max(uFlow, 1.0));
+      h = mix(h, sig, front);
+
+      gl_FragColor = vec4(h, h, h, 1.0);
+    }`,
+});
+const simScene = new THREE.Scene();
+simScene.add(new THREE.Mesh(quadGeo, simMat));
+
+function cookFeedback() {
+  simMat.uniforms.uPrev.value = rtA.texture;
+  renderer.setRenderTarget(rtB);
+  renderer.render(simScene, quadCam);
+  renderer.setRenderTarget(null);
+  [rtA, rtB] = [rtB, rtA];               // swap: this frame's output is next frame's input
+}
+
+function resetFeedback() {
+  for (const rt of [rtA, rtB]) { renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 1); renderer.clear(); }
+  renderer.setRenderTarget(null);
+}
+
+function buildKernel() {
+  // Blur = Convolve with a fixed recipe. Mix from identity (no blur) to a 3×3 gaussian.
+  const g = [1, 2, 1, 2, 4, 2, 1, 2, 1].map(v => v / 16);
+  const id = [0, 0, 0, 0, 1, 0, 0, 0, 0];
+  for (let i = 0; i < 9; i++) kernel[i] = id[i] * (1 - P.blur) + g[i] * P.blur;
+  document.getElementById('kernel').innerHTML =
+    kernel.map((v, i) => `<span class="${i === 4 ? 'center' : ''}">${v.toFixed(3)}</span>`).join('');
+}
+
+// ── WORLD ───────────────────────────────────────────────────────────────────
+// Grid SOP: 256 × 256 vertices, one per field pixel. Geometry density answers signal density.
+const terrainGeo = new THREE.PlaneGeometry(SIZE, SIZE, N - 1, N - 1);
+
+// CustomShaderMaterial (the library in the X clip: csm_Position, csm_Normal, csm_Metalness)
+// injects a few lines into three's own PBR material, so you keep its lighting and
+// reflections. The TD equivalent is writing GLSL into a PBR MAT instead of starting a GLSL MAT from zero.
+const terrainMat = new CustomShaderMaterial({
+  baseMaterial: THREE.MeshStandardMaterial,
+  uniforms: {
+    uField: { value: rtA.texture },
+    uTexel: { value: new THREE.Vector2(1 / N, 1 / N) },
+    uHeight: { value: P.height },
+    uCell: { value: SIZE / (N - 1) },
+    uMetal: { value: P.metal },
+    uLow: { value: new THREE.Color('#141817') },
+    uMid: { value: new THREE.Color('#5a625f') },
+    uHigh: { value: new THREE.Color('#e0c8a2') },
+  },
+  vertexShader: /* glsl */`
+    uniform sampler2D uField;
+    uniform vec2  uTexel;
+    uniform float uHeight;
+    uniform float uCell;
+    varying float vH;
+    void main() {
+      // Height = the field value under this vertex (the SOP displacement / tz).
+      float h  = texture2D(uField, uv).r;
+      // Normals from the field itself: compare left/right and down/up neighbours.
+      float hl = texture2D(uField, uv - vec2(uTexel.x, 0.0)).r;
+      float hr = texture2D(uField, uv + vec2(uTexel.x, 0.0)).r;
+      float hd = texture2D(uField, uv - vec2(0.0, uTexel.y)).r;
+      float hu = texture2D(uField, uv + vec2(0.0, uTexel.y)).r;
+      float dx = (hr - hl) * uHeight / (2.0 * uCell);
+      float dy = (hu - hd) * uHeight / (2.0 * uCell);
+      csm_Position = position + vec3(0.0, 0.0, h * uHeight);
+      csm_Normal = normalize(vec3(-dx, -dy, 1.0));
+      vH = h;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform float uMetal;
+    uniform vec3 uLow, uMid, uHigh;
+    varying float vH;
+    void main() {
+      float t = clamp(vH, 0.0, 1.0);
+      vec3 c = mix(uLow, uMid, smoothstep(0.0, 0.4, t));
+      c = mix(c, uHigh, smoothstep(0.4, 1.0, t));
+      csm_DiffuseColor = vec4(c, 1.0);
+      csm_Metalness = uMetal;
+      csm_Roughness = mix(0.85, 0.22, uMetal);   // more metal, glossier: ferrofluid
+    }`,
+});
+const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+terrain.rotation.x = -Math.PI / 2;        // the grid is built standing up; lay it flat (v = 0 faces the camera)
+terrain.frustumCulled = false;            // vertices move on the GPU, so three's bounds are stale
+scene.add(terrain);
+
+// ── The readouts (the Geo-Oscilloscope layer) ───────────────────────────────
+// Field view: draw the live feedback texture into the little square on the HUD,
+// using the same renderer with a scissor rectangle.
+const previewMat = new THREE.ShaderMaterial({
+  uniforms: { uField: { value: rtA.texture }, uLo: { value: new THREE.Color() }, uHi: { value: new THREE.Color() } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `uniform sampler2D uField; uniform vec3 uLo, uHi; varying vec2 vUv;
+    void main(){
+      float h = sqrt(clamp(texture2D(uField, vUv).r * 1.5, 0.0, 1.0));   /* display curve only; the field itself is untouched */
+      gl_FragColor = vec4(mix(uLo, uHi, h), 1.0);
+    }`,
+  toneMapped: false,
+});
+const previewScene = new THREE.Scene();
+previewScene.add(new THREE.Mesh(quadGeo, previewMat));
+const fieldWin = document.getElementById('fieldWin');
+
+function drawFieldPreview() {
+  const r = fieldWin.getBoundingClientRect();
+  const c = canvas.getBoundingClientRect();
+  const x = r.left - c.left, y = c.bottom - r.bottom;
+  renderer.setScissorTest(true);
+  renderer.setScissor(x, y, r.width, r.height);
+  renderer.setViewport(x, y, r.width, r.height);
+  renderer.render(previewScene, quadCam);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, c.width, c.height);
+}
+
+// Signal view: a CHOP viewer drawn with the 2D canvas API.
+const sc = document.getElementById('signalCanvas');
+const sctx = sc.getContext('2d');
+function drawSignal() {
+  const w = sc.width, h = sc.height;
+  sctx.clearRect(0, 0, w, h);
+  sctx.strokeStyle = theme.line; sctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) { const y = (h * i) / 4; sctx.beginPath(); sctx.moveTo(0, y); sctx.lineTo(w, y); sctx.stroke(); }
+  sctx.beginPath(); sctx.moveTo(0, h);
+  for (let x = 0; x < N; x++) sctx.lineTo((x / (N - 1)) * w, h - Math.min(signalRow[x], 1) * (h - 6));
+  sctx.lineTo(w, h); sctx.closePath();
+  sctx.fillStyle = theme.accentSoft; sctx.fill();
+  sctx.beginPath();
+  for (let x = 0; x < N; x++) { const px = (x / (N - 1)) * w, py = h - Math.min(signalRow[x], 1) * (h - 6); x ? sctx.lineTo(px, py) : sctx.moveTo(px, py); }
+  sctx.strokeStyle = theme.accent; sctx.lineWidth = 2; sctx.stroke();
+}
+
+// ── Theme: read the page's color tokens so the 3D scene follows light/dark ────
+const theme = {};
+function readTheme() {
+  const s = getComputedStyle(document.documentElement);
+  const get = n => s.getPropertyValue(n).trim();
+  theme.bg = get('--bg'); theme.line = get('--line'); theme.accent = get('--accent'); theme.accentSoft = get('--accent-soft');
+  scene.background = new THREE.Color(theme.bg);
+  scene.fog = new THREE.Fog(theme.bg, 15, 27);
+  previewMat.uniforms.uLo.value.set(get('--field-lo'));
+  previewMat.uniforms.uHi.value.set(get('--field-hi'));
+}
+readTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
+new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ── Parameter panel (Tweakpane) ─────────────────────────────────────────────
+const pane = new Pane({ container: document.getElementById('pane'), title: 'Parameters', expanded: innerWidth > 640 });
+const fS = pane.addFolder({ title: 'Signal · CHOPs' });
+fS.addBinding(P, 'gain', { min: 0, max: 3, step: 0.01 });
+fS.addBinding(P, 'lag', { min: 0, max: 0.98, step: 0.01 });
+fS.addBinding(P, 'resample', { min: 0, max: 1, step: 0.01, label: 'lin → log' });
+const fF = pane.addFolder({ title: 'Filter · feedback TOPs' });
+fF.addBinding(P, 'flow', { min: 0, max: 4, step: 1, label: 'translate' });
+fF.addBinding(P, 'blur', { min: 0, max: 1, step: 0.01 });
+fF.addBinding(P, 'step', { min: 1, max: 4, step: 0.25, label: 'sample step' });
+fF.addBinding(P, 'memory', { min: 0.9, max: 1, step: 0.001, label: 'brightness' });
+fF.addBinding(P, 'gamma', { min: 0.8, max: 1.3, step: 0.01 });
+fF.addBinding(P, 'contrast', { min: 0.8, max: 1.3, step: 0.01 });
+fF.addButton({ title: 'Reset feedback' }).on('click', resetFeedback);
+const fW = pane.addFolder({ title: 'World · grid + material' });
+fW.addBinding(P, 'height', { min: 0, max: 5, step: 0.01 });
+fW.addBinding(P, 'metal', { min: 0, max: 1, step: 0.01 });
+fW.addBinding(P, 'wire', { label: 'wireframe' });
+
+function applyParams() {
+  const u = simMat.uniforms;
+  u.uFlow.value = P.flow; u.uStep.value = P.step;
+  u.uMemory.value = P.memory; u.uGamma.value = P.gamma; u.uContrast.value = P.contrast;
+  terrainMat.uniforms.uHeight.value = P.height;
+  terrainMat.uniforms.uMetal.value = P.metal;
+  terrainMat.wireframe = P.wire;
+  buildKernel();
+}
+pane.on('change', applyParams);
+applyParams();
+
+// ── Sources ─────────────────────────────────────────────────────────────────
+const btn = { test: document.getElementById('srcTest'), file: document.getElementById('srcFile'), mic: document.getElementById('srcMic') };
+const playBtn = document.getElementById('playBtn');
+const statusEl = document.getElementById('status');
+const fileInput = document.getElementById('fileInput');
+
+function setMode(mode, msg) {
+  audio.mode = mode;
+  for (const k in btn) btn[k].setAttribute('aria-pressed', String(k === mode));
+  playBtn.hidden = mode !== 'file';
+  if (msg) statusEl.textContent = msg;
+}
+function stopNode() {
+  if (audio.node) { try { audio.node.stop?.(); } catch (e) {} audio.node.disconnect(); audio.node = null; }
+  if (audio.stream) { audio.stream.getTracks().forEach(t => t.stop()); audio.stream = null; }
+}
+function playBuffer() {
+  const ctx = audio.ctx;
+  const src = ctx.createBufferSource();
+  src.buffer = audio.buffer; src.loop = true;
+  src.connect(audio.analyser); audio.analyser.connect(ctx.destination);
+  src.start(0, audio.offset % audio.buffer.duration);
+  audio.startAt = ctx.currentTime - audio.offset; audio.node = src; audio.playing = true;
+  playBtn.textContent = 'Pause';
+}
+
+btn.test.addEventListener('click', () => {
+  stopNode(); audio.playing = false;
+  setMode('test', 'A silent built-in spectrum is driving the terrain. Load an audio file to use your own.');
+});
+btn.file.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const f = fileInput.files[0]; if (!f) return;
+  statusEl.textContent = `Decoding ${f.name}…`;
+  try {
+    const ctx = ensureAudio(); await ctx.resume();
+    audio.buffer = await ctx.decodeAudioData(await f.arrayBuffer());
+    stopNode(); audio.offset = 0; playBuffer();
+    setMode('file', `${f.name} · ${audio.buffer.numberOfChannels === 2 ? 'stereo summed to mono' : 'mono'} · ${audio.buffer.sampleRate / 1000} kHz · looping`);
+  } catch (e) {
+    statusEl.textContent = `Couldn't decode ${f.name}. Try an MP3, WAV or M4A file.`;
+  }
+  fileInput.value = '';
+});
+playBtn.addEventListener('click', () => {
+  if (!audio.buffer) return;
+  if (audio.playing) { audio.offset = audio.ctx.currentTime - audio.startAt; stopNode(); audio.playing = false; playBtn.textContent = 'Play'; }
+  else playBuffer();
+});
+btn.mic.addEventListener('click', async () => {
+  try {
+    const ctx = ensureAudio(); await ctx.resume();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    stopNode(); audio.stream = stream;
+    audio.node = ctx.createMediaStreamSource(stream);
+    audio.node.connect(audio.analyser);          // not to the speakers, to avoid feedback howl
+    audio.playing = false;
+    setMode('mic', 'Microphone live. Hum, clap, or play the piano near it.');
+  } catch (e) {
+    statusEl.textContent = 'The microphone is blocked on this hosted page. It works when you run the file on your computer through a local server (npx http-server).';
+  }
+});
+
+// ── Resize ──────────────────────────────────────────────────────────────────
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+});
+
+// ── The cook: one pass through Signal → Filter → World per frame ─────────────
+const fmtChip = document.getElementById('fmtChip');
+const fpsChip = document.getElementById('fpsChip');
+const ageLabel = document.getElementById('ageLabel');
+fmtChip.textContent = `field ${floatOK ? 'R32F' : 'R16F'} · ${N}×${N}`;
+document.getElementById('fieldFoot').textContent =
+  `${floatOK ? '32-bit' : '16-bit'} float · front row = this frame · each row back = one more pass of the kernel`;
+
+resetFeedback();
+let frames = 0, fpsT = 0, fps = 60, last = performance.now();
+
+function animate(now = performance.now()) {
+  const dt = (now - last) / 1000, t = now / 1000; last = now;
+  cookSignal(t);                                  // SIGNAL
+  cookFeedback();                                 // FILTER
+  terrainMat.uniforms.uField.value = rtA.texture; // WORLD reads the newest field
+  previewMat.uniforms.uField.value = rtA.texture;
+  controls.update();
+  renderer.render(scene, camera);
+  drawFieldPreview();
+  drawSignal();
+
+  frames++; fpsT += dt;
+  if (fpsT > 0.5) {
+    fps = frames / fpsT; frames = 0; fpsT = 0;
+    fpsChip.textContent = `${fps.toFixed(0)} fps`;
+    ageLabel.textContent = P.flow > 0 ? `−${(N / (P.flow * fps)).toFixed(1)} s` : 'held';
+  }
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
