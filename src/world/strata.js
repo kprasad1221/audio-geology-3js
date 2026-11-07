@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import CustomShaderMaterial from 'three-custom-shader-material/vanilla';
 import { N, SIZE, P } from '../params.js';
 import { makeGrid, FIELD_GLSL } from './stage.js';
+import { VOICES_GLSL } from './voices.js';
 
 const BASE = 0.55;   // thickness of the specimen below height 0, scene units
 
@@ -98,8 +99,9 @@ export function createStrata(U) {
       uniform sampler2D uD;
       uniform vec2 uTexel;
       uniform float uRelief, uSize, uBroad, uFine;
-      varying float vH, vCurv, vSlope, vAge;
+      varying float vH, vCurv, vSlope, vAge, vU, vHf;
       ${FIELD_GLSL}
+      ${VOICES_GLSL}
       void main() {
         float hf = fieldAt(uH, uv);
         vec4 d = texture2D(uD, uv);
@@ -108,14 +110,18 @@ export function createStrata(U) {
         float hd = fieldAt(uH, uv - vec2(0.0, uTexel.y)), hu = fieldAt(uH, uv + vec2(0.0, uTexel.y));
         vec2 gFine = vec2(hr - hl, hu - hd) / (2.0 * uTexel);
         vec2 g = mix(d.gb, gFine, uFine);
-        csm_Position = position + vec3(0.0, h * uRelief, 0.0);
+        // voices: broad octaves move the geometry (the fine ones are per pixel, below)
+        vec3 m = voiceMotion(uv, voiceHN(h), uv.y, 0, 6) * mix(0.35, 1.0, smoothstep(0.0, 0.08, h));
+        g += m.yz;
+        csm_Position = position + vec3(0.0, (h + m.x) * uRelief, 0.0);
         csm_Normal = normalize(vec3(-uRelief * g.x / uSize, 1.0, uRelief * g.y / uSize));
-        vH = h; vCurv = d.a; vSlope = uRelief * length(d.gb) / uSize; vAge = uv.y;
+        vH = h + m.x; vHf = h; vCurv = d.a; vSlope = uRelief * length(d.gb) / uSize; vAge = uv.y; vU = uv.x;
       }`,
     fragmentShader: /* glsl */`
-      uniform float uSimSteps, uFlow;
-      varying float vH, vCurv, vSlope, vAge;
+      uniform float uSimSteps, uFlow, uRelief, uSize;
+      varying float vH, vCurv, vSlope, vAge, vU, vHf;
       ${COMMON_FRAG}
+      ${VOICES_GLSL}
       void main() {
         // Deposit time of this row: rows move uFlow per 60 Hz step, so the row now at
         // index r was written r / uFlow steps ago. Laminations stay attached to it.
@@ -136,14 +142,34 @@ export function createStrata(U) {
         float seam = clamp(ridge * 0.9 + steep * 0.5, 0.0, 1.0) * smoothstep(0.03, 0.12, vH) * bed;
         c = mix(c, uOchre, seam * 0.85);
         c = mix(c, layerColor(floor(bandX)), 0.14);
+        // voices: pigment from each voice's record at this ground's age; grains in the woven layout
+        float hN = voiceHN(vHf);
+        float id = 0.0, grainEdge = 0.0, cellV = vAge;
+        if (uLayout > 1.5) {
+          vec3 cell = voiceCell(vec2(vU, vAge) * 96.0);
+          id = cell.x; cellV = cell.z / 96.0;
+          float fw = fwidth(cell.y);
+          grainEdge = 1.0 - smoothstep(fw * 0.5, fw * 1.8, cell.y);
+        }
+        float onset;
+        vec4 vm = voiceMix(vU, hN, id, cellV, onset);
+        float lift = mix(0.5, 1.0, smoothstep(0.01, 0.1, vHf));
+        float amt = clamp(vm.a * uVoiceColor * lift, 0.0, 1.0);
+        c = mix(c, vm.rgb, amt * 0.85);
+        c = mix(c, c * 0.62, grainEdge * clamp(uVoiceColor * 1.6, 0.0, 1.0) * amt * 0.7);   // boundaries only on sounding grains
+        float glint = clamp(onset * uVoiceColor * lift, 0.0, 1.0);
         // height contours (fixed to the field) and deposit laminations (moving with it)
         float contour = lineAA(bandX, 1.0);
         float lam = lineAA(depo, 1.0) * moving;
         float lamFine = lineAA(depo * 4.0, 0.7) * moving * uFineLines;
         c = mix(c, uInk, (contour * 0.34 + lam * 0.16 + lamFine * 0.1) * uBandContrast);
         csm_DiffuseColor = vec4(c, 1.0);
-        csm_Roughness = mix(0.9, 0.6, seam);
+        csm_Roughness = mix(mix(0.9, 0.6, seam), 0.3, glint);
         csm_Metalness = 0.0;
+        csm_Emissive = vm.rgb * glint * 0.25;
+        // the two finest voice octaves, per pixel (finer than the vertex grid)
+        vec3 mf = voiceMotion(vec2(vU, vAge), hN, vAge, 6, 8) * mix(0.35, 1.0, smoothstep(0.0, 0.08, vHf));
+        csm_FragNormal = normalize(csm_FragNormal + mat3(viewMatrix) * vec3(-uRelief * mf.y / uSize, 0.0, uRelief * mf.z / uSize));
       }`,
     roughness: 0.85, metalness: 0,
   });
@@ -163,9 +189,11 @@ export function createStrata(U) {
       attribute float aPerim;
       varying float vY, vTopY, vPerim;
       ${FIELD_GLSL}
+      ${VOICES_GLSL}
       void main() {
         float h = mix(fieldAt(uH, aEdge), texture2D(uD, aEdge).r, uBroad);
-        float topY = h * uRelief;
+        float m = voiceMotion(aEdge, voiceHN(h), aEdge.y, 0, 6).x * mix(0.35, 1.0, smoothstep(0.0, 0.08, h));
+        float topY = (h + m) * uRelief;
         float y = mix(-uBase, topY, aTop);
         csm_Position = vec3(position.x, y, position.z);
         vY = y; vTopY = topY; vPerim = aPerim;
@@ -214,6 +242,7 @@ export function createStrata(U) {
         ['laminations', `1 per 0.25 s of deposit, travel with the rows · contrast ${(0.2 + 0.8 * det).toFixed(2)}, fine ${det.toFixed(2)}  ← Detail`],
         ['colour', 'chalk · sea-green in lows and hollows (curvature > 0) · ochre on crests and steep faces'],
         ['cut faces', 'same band coordinate continued down the skirt'],
+        ['voices', `${P.voices.layout.strata} · pigment = Σ weight × level at the ground's age (woven: 96 grains across) · onset glint · octaves 0–5 move vertices, 6–7 per pixel`],
       ];
     },
   };

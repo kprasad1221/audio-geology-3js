@@ -3,7 +3,7 @@
 //  the active study, field formats, a 60-second frame-time capture, and presets.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Pane } from 'tweakpane';
-import { P, VERSION, BUDGETS, CURRENTS_TREATMENTS, snapshot, assign, decayFor } from '../params.js';
+import { P, VERSION, BUDGETS, CURRENTS_TREATMENTS, BAND_EDGES, BAND_NAMES, snapshot, assign, decayFor } from '../params.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -16,6 +16,21 @@ export function createInspect(app) {
   fS.addBinding(P, 'lag', { min: 0, max: 0.98, step: 0.01 });
   fS.addBinding(P, 'resample', { min: 0, max: 1, step: 0.01, label: 'lin → log' });
   fS.addBinding(P, 'attnFloor', { min: 0, max: 1, step: 0.01, label: 'attn floor' });
+  fS.addBinding(P, 'testSignal', { options: { 'Polyrhythm (8 voices)': 'poly', 'Pulse (study 02.1)': 'pulse' }, label: 'test signal' });
+  const fV = pane.addFolder({ title: 'Voices', expanded: true });
+  const LAY = { Register: 'register', Elevation: 'elevation', Woven: 'woven' };
+  fV.addBinding(P.voices.layout, 'strata', { options: LAY, label: 'Strata layout' });
+  fV.addBinding(P.voices.layout, 'currents', { options: LAY, label: 'Currents layout' });
+  fV.addBinding(P.voices.layout, 'sediment', { options: LAY, label: 'Sediment layout' });
+  fV.addBinding(P.voices, 'color', { min: 0, max: 1.5, step: 0.01, label: 'colour' });
+  fV.addBinding(P.voices, 'motion', { min: 0, max: 2, step: 0.01 });
+  fV.addBinding(P.voices, 'now', { min: 0, max: 1, step: 0.01, label: 'memory ↔ now' });
+  fV.addBinding(P.voices, 'attack', { min: 0.005, max: 0.1, step: 0.001, label: 'attack s' });
+  fV.addBinding(P.voices, 'releaseLow', { min: 0.03, max: 1.5, step: 0.01, label: 'release sub s' });
+  fV.addBinding(P.voices, 'releaseHigh', { min: 0.02, max: 1.0, step: 0.01, label: 'release air s' });
+  fV.addBinding(P.voices, 'onset', { min: 1, max: 4, step: 0.05, label: 'onset ×' });
+  const fG = fV.addFolder({ title: 'Gains (weight per voice)', expanded: false });
+  BAND_NAMES.forEach((n, k) => fG.addBinding(P.voices.gains, String(k), { min: 0, max: 2, step: 0.01, label: n }));
   const fF = pane.addFolder({ title: 'Filter (canonical)' });
   fF.addBinding(P, 'flow', { min: 0, max: 4, step: 1, label: 'translate' });
   fF.addBinding(P, 'step', { min: 1, max: 4, step: 0.25, label: 'sample step' });
@@ -56,6 +71,9 @@ export function createInspect(app) {
       ['clock', `60 Hz fixed step · ≤ 4 steps per frame`],
       ['Memory', `${P.memory.toFixed(2)} s → decay ${decayFor(P.memory).toFixed(5)} / step`],
       ['history', P.flow > 0 ? `≈ ${(256 / (P.flow * 60)).toFixed(2)} s across the field` : 'translate 0: rows do not move'],
+      ['voices', `8 bands · ${BAND_EDGES.map(f => (f >= 1000 ? f / 1000 + 'k' : f)).join(' · ')} Hz`],
+      ['analysis', 'bands 1–4 from a 4096-point FFT (≈ 11.7 Hz bins, 85 ms); 5–8 from the 1024-point FFT (≈ 46.9 Hz, 21 ms). The test signal is synthetic, read from the 512 bins'],
+      ['voice record', '8 × 256 RGBA32F (32 KiB), shifted with the field rows: r = level, g = onset'],
     ]);
     $('kernel').innerHTML = app.field.kernel.map((v, i) => `<span class="${i === 4 ? 'c' : ''}">${v.toFixed(3)}</span>`).join('');
     pane.refresh();

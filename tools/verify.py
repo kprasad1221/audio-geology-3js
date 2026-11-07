@@ -17,6 +17,9 @@ RESULTS = {}
 async def field(page):
     return np.array(await page.evaluate("() => Array.from(window.__ag.readField())"), dtype=np.float64)
 
+async def voices(page):
+    return np.array(await page.evaluate("() => Array.from(window.__ag.bands.hist)"), dtype=np.float64)
+
 async def run_schedule(page, hz, steps=360):
     await page.evaluate("""() => { const a = window.__ag; a.hooks.renderWorld = false; a.state.running = true; a.state.held = false; a.restart(); }""")
     s0 = await page.evaluate("window.__ag.simSteps()")
@@ -44,13 +47,13 @@ async def main():
 
         # ── 1 · timing invariance ────────────────────────────────────────────
         await page.evaluate("() => { const a = window.__ag; a.state.running = false; a.restart(); a.stepSim(360); }")
-        ref = await field(page)
+        ref = await field(page); vref = await voices(page)
         out = {}
         for hz in (30, 60, 120):
             steps, frames = await run_schedule(page, hz)
-            f = await field(page)
+            f = await field(page); v = await voices(page)
             out[f'{hz} Hz'] = {'frames': frames, 'steps': steps, 'max_abs_diff_vs_direct': float(np.abs(f - ref).max()),
-                               'field_max': float(f.max())}
+                               'voice_record_max_abs_diff': float(np.abs(v - vref).max()), 'field_max': float(f.max())}
         RESULTS['timing'] = out
 
         # ── 2 · overload: 10 Hz display (100 ms frames want 6 steps; cap is 4) ─
@@ -63,7 +66,7 @@ async def main():
         # ── 3 · continuity across study switches ─────────────────────────────
         await page.evaluate("() => { const a = window.__ag; a.hooks.renderWorld = true; a.state.running = false; a.setStudy('strata'); a.restart(); a.stepSim(240); a.goTo('detail'); }")
         await settle(page, 1)
-        before = await field(page)
+        before = await field(page); vbefore = await voices(page)
         cam0 = await page.evaluate("() => window.__ag.stage.camera.position.toArray()")
         t0 = await page.evaluate("window.__ag.sources.position()")
         for st in ('currents', 'sediment', 'strata'):
@@ -72,6 +75,7 @@ async def main():
         cam1 = await page.evaluate("() => window.__ag.stage.camera.position.toArray()")
         t1 = await page.evaluate("window.__ag.sources.position()")
         RESULTS['continuity'] = {'field_max_abs_diff': float(np.abs(after - before).max()),
+                                 'voice_record_max_abs_diff': float(np.abs(await voices(page) - vbefore).max()),
                                  'camera_moved': float(np.abs(np.array(cam1) - np.array(cam0)).max()),
                                  'source_time_before_after': [t0, t1]}
 
@@ -88,9 +92,11 @@ async def main():
                        'button': await page.text_content('#playTxt')}
         await page.click('#playBtn')                                    # play
         await page.click('#holdBtn')                                    # hold
-        f_hold = await field(page); t_hold = await page.evaluate("window.__ag.sources.position()")
+        f_hold = await field(page); v_hold = await voices(page); t_hold = await page.evaluate("window.__ag.sources.position()")
         for _ in range(30): await page.evaluate("window.__fake.step(1000/60)")
         tr['hold'] = {'field_changed': float(np.abs(await field(page) - f_hold).max()),
+                      'voice_record_changed': float(np.abs(await voices(page) - v_hold).max()),
+                      'live_meter_moving': await page.evaluate("() => Array.from(window.__ag.bands.level).some(x => x > 0)"),
                       'source_advanced_s': round(await page.evaluate("window.__ag.sources.position()") - t_hold, 4),
                       'button': await page.text_content('#holdTxt'), 'pressed': await page.get_attribute('#holdBtn', 'aria-pressed')}
         s_rel = await page.evaluate("window.__ag.simSteps()")
@@ -98,7 +104,7 @@ async def main():
         await page.evaluate("window.__fake.step(1000/60)")
         tr['release'] = {'steps_on_first_frame': await page.evaluate("window.__ag.simSteps()") - s_rel}
         await page.click('#restartBtn')
-        tr['restart'] = {'field_max_after': float((await field(page)).max()),
+        tr['restart'] = {'field_max_after': float((await field(page)).max()), 'voice_record_max_after': float((await voices(page)).max()),
                          'source_time': await page.evaluate("window.__ag.sources.position()"),
                          'status': await page.text_content('#status')}
         for _ in range(30): await page.evaluate("window.__fake.step(1000/60)")

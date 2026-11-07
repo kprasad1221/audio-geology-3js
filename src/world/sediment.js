@@ -22,6 +22,7 @@
 import * as THREE from 'three';
 import { P, N, SIZE, SIM_HZ } from '../params.js';
 import { FIELD_GLSL } from './stage.js';
+import { VOICES_GLSL } from './voices.js';
 
 const SLICE_SECONDS = [0, 0.5, 1, 2, 3, 4];
 
@@ -80,8 +81,10 @@ export function createSediment(U, keyDir) {
       uniform vec3 uKeyDir;
       attribute vec2 aUv;
       attribute vec3 aRand;
-      varying float vBright, vAccent, vAge;
+      varying float vBright, vAccent, vAge, vVoice;
+      varying vec3 vVoiceCol;
       ${FIELD_GLSL}
+      ${VOICES_GLSL}
       void main() {
         float h = fieldLinear(uH, aUv);
         vec4 d = texture2D(uD, aUv);
@@ -94,6 +97,16 @@ export function createSediment(U, keyDir) {
         float y = h * uRelief;
         y += dust * (aRand.z - 0.5) * 0.35;
         y *= mix(1.0, pow(fract(aRand.z * 7.13), 0.45), fill);
+        // voices: each grain belongs to one voice. Woven: grains are grouped into irregular
+        // cells (32 across) that rise together while their voice sounds. Otherwise the
+        // motion octaves move the grains.
+        float hN = voiceHN(h), id = aRand.z, cellV = aUv.y;
+        if (uLayout > 1.5) { vec3 cell = voiceCell(aUv * 32.0); id = cell.x; cellV = cell.z / 32.0; }
+        int vk = voiceIndex(aUv.x, hN, id);
+        vec2 lo = voiceAt(vk, cellV);
+        float rise = uLayout > 1.5 ? lo.x * 0.14 * uVoiceMotion : voiceMotion(aUv, hN, aUv.y, 0, 8).x;
+        y += rise * mix(0.35, 1.0, smoothstep(0.0, 0.08, h)) * uRelief;
+        vVoiceCol = uBandCol[vk]; vVoice = clamp(lo.x * uVoiceColor * 1.4, 0.0, 1.0);
         vec3 pos = vec3((aUv.x - 0.5) * uSize, y, (0.5 - aUv.y) * uSize);
         vec3 N = normalize(vec3(-uRelief * d.g / uSize, 1.0, uRelief * d.b / uSize));
         float lit = clamp(dot(N, normalize(uKeyDir)) * 0.7 + 0.3, 0.0, 1.0);
@@ -101,9 +114,9 @@ export function createSediment(U, keyDir) {
         gl_Position = projectionMatrix * mv;
         float acc = 1.0 - smoothstep(uAccent.y * 0.55, uAccent.y, abs(aUv.x - uAccent.x));
         acc *= 1.0 - smoothstep(0.0, 0.85, aUv.y);
-        acc *= smoothstep(0.01, 0.08, h);
+        acc *= smoothstep(0.01, 0.08, h) * (1.0 - 0.75 * clamp(uVoiceColor, 0.0, 1.0));
         float size = uSizePx * (0.7 + 0.6 * aRand.z) * (12.0 / max(-mv.z, 0.1));
-        size = clamp(size, 1.5, 4.5) * uPixelRatio * (1.0 + 0.45 * acc);
+        size = clamp(size, 1.5, 4.5) * uPixelRatio * (1.0 + 0.45 * acc) * (1.0 + 0.7 * lo.y * uVoiceColor);
         gl_PointSize = keep > 0.5 ? size : 0.0;
         if (keep < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         vBright = (0.5 + 0.5 * lit) * (0.7 + 0.5 * smoothstep(0.0, 0.4, h)) * (dust > 0.5 ? 0.55 : 1.0) * (1.0 - 0.4 * fill);
@@ -111,7 +124,8 @@ export function createSediment(U, keyDir) {
       }`,
     fragmentShader: /* glsl */`
       uniform vec3 uPearl, uAmber, uCyan, uCobalt;
-      varying float vBright, vAccent, vAge;
+      varying float vBright, vAccent, vAge, vVoice;
+      varying vec3 vVoiceCol;
       void main() {
         float r = length(gl_PointCoord - 0.5);
         float a = 1.0 - smoothstep(0.3, 0.5, r);
@@ -119,6 +133,7 @@ export function createSediment(U, keyDir) {
         vec3 spec = mix(uAmber, uCyan, smoothstep(0.02, 0.28, vAge));
         spec = mix(spec, uCobalt, smoothstep(0.28, 0.65, vAge));
         vec3 col = mix(uPearl * vBright, spec * (1.1 + 0.9 * vBright), vAccent);
+        col = mix(col, vVoiceCol * (0.75 + 0.9 * vBright), vVoice);
         gl_FragColor = vec4(col, a);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -198,6 +213,7 @@ export function createSediment(U, keyDir) {
         ['density', `mix(${s.floor.toFixed(2)}, 1, smoothstep(${s.gap.toFixed(2)}, ${(s.gap + 0.08).toFixed(2)}, H))`],
         ['grain', `size ${(1.5 + 1.0 * det).toFixed(2)} px, dust ${(0.08 + 0.2 * det).toFixed(2)}, fill 0.32  ← Detail`],
         ['spectral', 'one register: Attention range if narrowed, else the dominant register; colour = age'],
+        ['voices', `${P.voices.layout.sediment} · each grain belongs to one voice; ${P.voices.layout.sediment === 'woven' ? 'cells of grains (32 across) rise up to 0.14 × Relief with their voice' : 'motion octaves move the grains'}; colour = level, size grows on onsets; register accent × (1 − 0.75 · colour)`],
         ['slices', `${visibleSlices} profiles of H at 0, 0.5, 1, 2, 3, 4 s (history window permitting)`],
       ];
     },

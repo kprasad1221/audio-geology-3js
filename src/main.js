@@ -9,10 +9,13 @@
 //  render passes are visible; it never touches H, the audio position or the camera.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
-import { P, N, SIZE, SIM_HZ, BUDGETS, CURRENTS_TREATMENTS, assign } from './params.js';
+import { P, N, SIZE, SIM_HZ, BINS, FFT_SIZE, BUDGETS, CURRENTS_TREATMENTS, assign } from './params.js';
 import { FixedClock, SIM_DT } from './clock.js';
 import { signal, cookSignal, clearSignalState, rebuildWeights, hzToColumn, columnToHz, attentionColumns, isFullAttention } from './signal.js';
 import { Sources } from './audio.js';
+import { bands, cookBands, depositBands, syncWorld, clearBands } from './bands.js';
+import { createVoiceUniforms, setVoicePalette, setVoiceEdges, updateVoiceUniforms } from './world/voices.js';
+import { createVoicesUI } from './ui/voices.js';
 import { createField } from './field.js';
 import { createStage, createSurvey } from './world/stage.js';
 import { createStrata } from './world/strata.js';
@@ -53,6 +56,8 @@ const U = {
   uRelief: { value: P.relief }, uSize: { value: SIZE },
   uSimSteps: { value: 0 }, uFlow: { value: P.flow },     // field steps taken; rows moved per step
 };
+const VU = createVoiceUniforms();     // the eight voices (render layers only)
+Object.assign(U, VU);
 const studies = {
   strata: createStrata(U),
   currents: createCurrents(U, stage.keyDir),
@@ -110,6 +115,9 @@ const controls = createControls({
   onLight: () => stage.setLight(P.light),
 });
 
+const voicesUI = createVoicesUI({ study: () => study, onChange: () => { voicesDirty = true; inspect?.refreshStatic(); } });
+let voicesDirty = true;
+
 const app = {
   field,
   study: () => study,
@@ -120,7 +128,8 @@ const app = {
   status: msg => { $('status').textContent = msg; },
   applyTreatment: name => { studies.currents.applyTreatment(name); needDerive = true; inspect.refreshStatic(); },
   onParams: () => {
-    field.applyParams(); rebuildWeights(); controls.sync(); buildSurvey(); monitors.layoutHzTicks();
+    field.applyParams(); rebuildWeights(); controls.sync(); voicesUI.sync(); buildSurvey(); monitors.layoutHzTicks();
+    setVoiceEdges(VU, hzToColumn); voicesDirty = true;
     needDerive = true; signalDirty = true; previewDirty = true; resize(); inspect.refreshStatic();
   },
   applyPreset: data => applyPreset(data),
@@ -144,6 +153,7 @@ function setStudy(name) {
   stage.shadow.position.y = cur().shadow.y; stage.shadow.material.opacity = cur().shadow.opacity;
   survey.mat.color.setHex(L.survey[0]); survey.mat.opacity = L.survey[1];
   monitors.setStudy(name); monitors.readTokens();
+  setVoicePalette(VU, name); voicesUI.setStudy(name); voicesDirty = true;
   controls.sync(); inspect.refreshStatic();
   needDerive = true; signalDirty = true; previewDirty = true;
 }
@@ -174,7 +184,7 @@ function buildSurvey() {
 // ── Sources and transport ───────────────────────────────────────────────────
 const srcBtn = { test: $('srcTest'), file: $('srcFile'), mic: $('srcMic') };
 function markSource() { for (const k in srcBtn) srcBtn[k].setAttribute('aria-pressed', String(k === sources.mode)); }
-function syncRate() { signal.sampleRate = sources.sampleRate; rebuildWeights(); controls.syncAttention(); buildSurvey(); monitors.layoutHzTicks(); signalDirty = true; }
+function syncRate() { signal.sampleRate = sources.sampleRate; rebuildWeights(); controls.syncAttention(); buildSurvey(); monitors.layoutHzTicks(); setVoiceEdges(VU, hzToColumn); signalDirty = true; }
 function syncTransport() {
   $('playTxt').textContent = state.running ? 'Pause' : 'Play';
   $('playIco').setAttribute('d', state.running ? 'M4 3h3v10H4zM9 3h3v10H9z' : 'M4 2.5v11l9-5.5z');
@@ -221,8 +231,8 @@ $('holdBtn').addEventListener('click', () => {
   app.status(state.held ? 'World held: the signal keeps playing, the field is frozen.' : 'Released: the field resumes from the current source position.');
 });
 function clearMemory() {
-  field.clear(); clearSignalState(); clock.reset();
-  needDerive = true; signalDirty = true; previewDirty = true;
+  field.clear(); clearSignalState(); clearBands(); clock.reset();
+  needDerive = true; signalDirty = true; previewDirty = true; voicesDirty = true;
 }
 $('restartBtn').addEventListener('click', () => {
   sources.seekStart(); clearMemory();
@@ -347,10 +357,15 @@ const hooks = { renderWorld: true };
 function simulate(n) {
   for (let i = 0; i < n; i++) {
     cookSignal(bins => sources.read(bins));   // SIGNAL
+    const low = sources.readLow(bands.lowBins);  // VOICES: the long FFT for the low bands (real audio only)
+    cookBands(signal.bins, signal.sampleRate / FFT_SIZE, low ? bands.lowBins : null, sources.lowBinHz);
     sources.advance(SIM_DT);
-    if (!state.held) { field.step(); U.uSimSteps.value++; }   // FILTER (frozen while held)
+    if (!state.held) { field.step(); depositBands(SIM_DT); U.uSimSteps.value++; }   // FILTER (frozen while held)
   }
-  if (n > 0) { signalDirty = true; if (!state.held) { needDerive = true; previewDirty = true; } }
+  if (n > 0) {
+    signalDirty = true; voicesDirty = true;
+    if (!state.held) { needDerive = true; previewDirty = true; syncWorld(); }
+  }
   stepCount += n;
 }
 
@@ -363,6 +378,7 @@ function frame(now = performance.now()) {
 
   if (needDerive) { field.derive(cur().radius()); needDerive = false; }   // D, once per frame
   U.uH.value = field.H; U.uD.value = field.D; U.uRelief.value = P.relief; U.uFlow.value = P.flow;
+  updateVoiceUniforms(VU, study);
   cur().update();
   if (study === 'sediment') updateAccent();
   stage.update(dt);
@@ -370,6 +386,7 @@ function frame(now = performance.now()) {
   if (hooks.renderWorld) { renderer.setRenderTarget(null); renderer.render(stage.scene, stage.camera); }   // WORLD
   if (previewDirty) { monitors.updateFilter(); previewDirty = false; }
   if (signalDirty) { monitors.drawSignal(); signalDirty = false; }
+  if (voicesDirty) { voicesUI.draw(); voicesDirty = false; }
   drawOverlay();
 
   // stats
@@ -388,14 +405,14 @@ function frame(now = performance.now()) {
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 signal.sampleRate = sources.sampleRate;
-rebuildWeights(); buildSurvey(); monitors.layoutHzTicks();
+rebuildWeights(); buildSurvey(); monitors.layoutHzTicks(); setVoiceEdges(VU, hzToColumn);
 setStudy('strata'); stage.setLight(P.light); syncTransport(); markSource();
 resize();
 requestAnimationFrame(frame);
 
 // Test and capture hooks (used by the repo's headless checks; harmless otherwise).
 window.__ag = {
-  P, state, field, stage, studies, signal, sources, hooks, stats,
+  P, state, field, stage, studies, signal, sources, hooks, stats, bands,
   setStudy, goTo: (name, instant = true) => stage.goTo(name, instant),
   restart: () => { sources.seekStart(); clearMemory(); },
   stepSim: n => { simulate(n); needDerive = true; },

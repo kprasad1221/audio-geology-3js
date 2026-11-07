@@ -9,7 +9,8 @@
 //  coarse CPU copy of the field for annotations, at no extra GPU pass.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
-import { N } from '../params.js';
+import { N, NB, P, BAND_EDGES, VOICE_PALETTES } from '../params.js';
+import { bands } from '../bands.js';
 import { signal, columnToHz, hzToColumn, attentionColumns, isFullAttention } from '../signal.js';
 
 export const PW = 256, PH = 128;     // preview: time across, frequency up
@@ -60,7 +61,8 @@ export function createMonitors(renderer, field, els) {
   let pending = false, asyncOK = typeof renderer.readRenderTargetPixelsAsync === 'function';
   let frames = 0;
 
-  function setStudy(name) { (HEAT[name] || HEAT.strata).forEach((h, i) => ramp[i].set(h)); }
+  let voiceCols = VOICE_PALETTES.strata;
+  function setStudy(name) { (HEAT[name] || HEAT.strata).forEach((h, i) => ramp[i].set(h)); voiceCols = VOICE_PALETTES[name] || VOICE_PALETTES.strata; }
 
   function drawAttentionOnHeat() {
     if (isFullAttention()) return;
@@ -158,6 +160,14 @@ export function createMonitors(renderer, field, els) {
       sctx.fillRect(0, 0, X(c0), ph); sctx.fillRect(X(c1), 0, w - X(c1), ph);
       sctx.strokeStyle = css.accent; sctx.lineWidth = dpr;
       for (const c of [c0, c1]) { sctx.beginPath(); sctx.moveTo(X(c), 0); sctx.lineTo(X(c), ph); sctx.stroke(); }
+    }
+    // the eight voices along the baseline: where each band sits, lit by its level now
+    const sh = 3 * dpr;
+    for (let k = 0; k < NB; k++) {
+      const x0 = X(hzToColumn(BAND_EDGES[k])), x1 = X(hzToColumn(BAND_EDGES[k + 1]));
+      sctx.globalAlpha = 0.25 + 0.75 * Math.min(bands.level[k] * P.voices.gains[k], 1);
+      sctx.fillStyle = voiceCols[k];
+      sctx.fillRect(x0, ph - sh, Math.max(x1 - x0 - dpr, dpr), sh);
     }
     // frequency axis, real positions
     sctx.fillStyle = css.ink; sctx.globalAlpha = 0.7;

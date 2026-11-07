@@ -228,7 +228,7 @@ input.engraved:focus-visible::-moz-range-thumb { outline: 2px solid var(--accent
 /* ── Shelf ─────────────────────────────────────────────────────────────────── */
 .shelf { position: relative; isolation: isolate;
   display: grid; gap: 4px 22px; align-items: start;
-  grid-template-columns: minmax(200px, 1.05fr) minmax(170px, .62fr) minmax(260px, 1.45fr) minmax(250px, auto);
+  grid-template-columns: minmax(190px, 1fr) minmax(150px, .5fr) minmax(250px, 1.05fr) minmax(220px, 1.1fr) minmax(240px, auto);
   padding: 28px max(20px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left)); }
 .shelf > .erosion { position: absolute; inset: 0; z-index: -1; }
 .mon h2, .shelf h2 { font: 500 11px var(--f-mono); letter-spacing: .22em; text-transform: uppercase; margin-bottom: 6px; }
@@ -255,6 +255,21 @@ html[data-study="sediment"] .mon-signal { background: var(--plot-bg); color: var
 .dual input:focus-visible::-moz-range-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .mon-filter { min-width: 0; padding-left: 18px; border-left: 1px solid var(--faint); }
+
+/* Voices: score + fader */
+.mon-voices { min-width: 0; padding-left: 18px; border-left: 1px solid var(--faint); }
+.voi-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -12px 0 0; }
+.voi-head h2 { margin-bottom: 0; }
+.select.mini { width: auto; min-height: 44px; padding: 0 8px; font-size: 11px; border-radius: 999px; }
+.voi-body { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; gap: 0 6px; height: 92px; margin-top: 2px; }
+.voi-lanes { display: grid; grid-template-rows: repeat(8, 1fr); font: 9px/1 var(--f-mono); color: var(--muted); text-align: right; }
+.voi-lanes span { align-self: center; white-space: nowrap; }
+.voi-box { position: relative; border-radius: 4px; overflow: hidden; background: var(--heat-bg); box-shadow: inset 0 0 0 1px var(--faint); }
+#voiceScore { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.voi-fader { display: grid; grid-template-rows: 1fr auto; justify-items: center; }
+.voi-fader .vbox { width: 40px; height: 72px; }
+.voi-fader .vbox input { width: 72px; left: -16px; top: 14px; }
+.voi-fader output { font-size: 10px; padding: 1px 4px; border-radius: 5px; background: var(--face-2); border: 1px solid var(--faint); }
 .heat { display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: 92px auto; }
 .heat-hz { position: relative; font: 9.5px var(--f-mono); color: var(--muted); }
 .heat-hz span { position: absolute; right: 5px; transform: translateY(-50%); }
@@ -322,6 +337,8 @@ html[data-perform] .mon h2 { opacity: .55; }
 @media (max-height: 800px) and (min-width: 900px) {
   .plot { height: 62px; }
   .heat { grid-template-rows: 62px auto; }
+  .voi-body { height: 62px; } .voi-fader .vbox { height: 46px; } .voi-fader .vbox input { width: 46px; left: -3px; top: 1px; }
+  .voi-head { margin-top: -14px; }
   .macro-head label { font-size: 16px; }
   input.engraved { height: 34px; }
   .ticks { display: none; }
@@ -339,7 +356,7 @@ html[data-perform] .mon h2 { opacity: .55; }
 }
 /* Medium width: the transport drops to its own row. */
 @media (max-width: 1180px) and (min-width: 900px) {
-  .shelf { grid-template-columns: minmax(180px, 1fr) minmax(160px, .65fr) minmax(240px, 1.35fr); }
+  .shelf { grid-template-columns: minmax(170px, 1fr) minmax(140px, .55fr) minmax(220px, 1.1fr) minmax(200px, 1.1fr); }
   .transport { grid-column: 1 / -1; padding-left: 0; border-left: 0; grid-template-columns: auto auto 1fr; align-items: center; gap: 6px 16px; }
   .study-tag { display: none; }
 }
@@ -349,8 +366,9 @@ html[data-perform] .mon h2 { opacity: .55; }
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   .masthead { grid-area: 1 / 1 / 2 / 2; flex-wrap: wrap; }
   .world { grid-area: 1 / 1 / 3 / 2; }
-  .shelf { grid-area: 3 / 1 / 4 / 2; overflow-x: auto; grid-template-columns: repeat(3, minmax(190px, 1fr)); }
+  .shelf { grid-area: 3 / 1 / 4 / 2; overflow-x: auto; grid-template-columns: repeat(2, minmax(220px, 1fr)); }
   .transport { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
+  .mon-voices { padding-left: 0; border-left: 0; }
   .study-tag { display: none; }
   #controlsBtn { display: inline-block; }
   .edge { position: fixed; top: 0; right: 0; bottom: 0; width: min(320px, 88vw); z-index: 10;
@@ -376,7 +394,7 @@ html[data-perform] .mon h2 { opacity: .55; }
   .drawer-head { display: none; }
   #controlsBtn { display: none; }
   .shelf { display: grid; grid-template-columns: minmax(0, 1fr); overflow: visible; gap: 14px; }
-  .mon-attn, .mon-filter, .transport { padding-left: 0; border-left: 0; }
+  .mon-attn, .mon-filter, .mon-voices, .transport { padding-left: 0; border-left: 0; }
   .inspect { position: fixed; top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 70svh; z-index: 12; }
   .bookmarks { bottom: 8px; }
 }

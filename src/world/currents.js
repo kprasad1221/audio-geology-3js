@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import CustomShaderMaterial from 'three-custom-shader-material/vanilla';
 import { P, SIZE, CURRENTS_TREATMENTS } from '../params.js';
 import { makeGrid } from './stage.js';
+import { VOICES_GLSL } from './voices.js';
 
 const MAX_RIBBONS = 4096;
 const SEG_MAX = 8;
@@ -70,10 +71,12 @@ export function createCurrents(U, keyDir) {
       uniform sampler2D uD;
       uniform float uRelief, uSize;
       varying float vH;
+      ${VOICES_GLSL}
       void main() {
         vec4 d = texture2D(uD, uv);
-        csm_Position = position + vec3(0.0, d.r * uRelief, 0.0);
-        csm_Normal = normalize(vec3(-uRelief * d.g / uSize, 1.0, uRelief * d.b / uSize));
+        vec3 m = voiceMotion(uv, voiceHN(d.r), uv.y, 0, 6) * mix(0.35, 1.0, smoothstep(0.0, 0.08, d.r));
+        csm_Position = position + vec3(0.0, (d.r + m.x) * uRelief, 0.0);
+        csm_Normal = normalize(vec3(-uRelief * (d.g + m.y) / uSize, 1.0, uRelief * (d.b + m.z) / uSize));
         vH = d.r;
       }`,
     fragmentShader: /* glsl */`
@@ -100,8 +103,9 @@ export function createCurrents(U, keyDir) {
       uniform vec2 uViewport;
       attribute float aS, aSide, aSeed;
       attribute vec2 aAnchor;
-      varying vec3 vT, vN, vW;
-      varying float vS, vE, vAge, vHt, vSide;
+      varying vec3 vT, vN, vW, vVoiceCol;
+      varying float vS, vE, vAge, vHt, vSide, vVoice, vFlash;
+      ${VOICES_GLSL}
 
       vec2 flowDir(vec2 p) {
         vec2 g = texture2D(uD, p).gb;
@@ -128,14 +132,20 @@ export function createCurrents(U, keyDir) {
         p = clamp(p, vec2(0.0), vec2(1.0));
         vec4 d = texture2D(uD, p);
         vec2 dir = flowDir(p);
-        vec3 N = normalize(vec3(-uRelief * d.g / uSize, 1.0, uRelief * d.b / uSize));
+        // ride the same voice motion as the supporting surface
+        vec3 m = voiceMotion(p, voiceHN(d.r), p.y, 0, 6) * mix(0.35, 1.0, smoothstep(0.0, 0.08, d.r));
+        vec3 N = normalize(vec3(-uRelief * (d.g + m.y) / uSize, 1.0, uRelief * (d.b + m.z) / uSize));
         vec3 T = normalize(vec3(dir.x * uSize, uRelief * dot(d.gb, dir), -dir.y * uSize));
         vec3 B = normalize(cross(T, N));
         float e = smoothstep(0.003, 0.05, d.r);                       // energy
         float s = k / segs;
         float taper = pow(sin(3.14159 * clamp(s, 0.02, 0.98)), 0.6);
-        float halfW = uWidth * e * taper * (0.75 + 0.5 * aSeed);
-        vec3 c = toWorld(p, d.r) + N * uLift;
+        // this ribbon's voice is fixed by its anchor; its record is read along its length
+        int vk = voiceIndex(aAnchor.x, voiceHN(texture2D(uD, aAnchor).r), aSeed);
+        vec2 lo = voiceAt(vk, p.y);
+        vVoiceCol = uBandCol[vk]; vVoice = lo.x * uVoiceColor; vFlash = lo.y * uVoiceColor;
+        float halfW = uWidth * e * taper * (0.75 + 0.5 * aSeed) * (1.0 + 0.35 * vFlash);
+        vec3 c = toWorld(p, d.r + m.x) + N * uLift;
         vec3 w = c + B * aSide * halfW;
         // Keep a minimum on-screen width so thin ribbons never shimmer.
         vec4 cc = projectionMatrix * modelViewMatrix * vec4(c, 1.0);
@@ -149,8 +159,8 @@ export function createCurrents(U, keyDir) {
       }`,
     fragmentShader: /* glsl */`
       uniform vec3 uKeyDir, uDeep, uCobalt, uSilver, uCopper;
-      varying vec3 vT, vN, vW;
-      varying float vS, vE, vAge, vHt, vSide;
+      varying vec3 vT, vN, vW, vVoiceCol;
+      varying float vS, vE, vAge, vHt, vSide, vVoice, vFlash;
       void main() {
         vec3 T = normalize(vT), N = normalize(vN);
         vec3 V = normalize(cameraPosition - vW);
@@ -165,6 +175,10 @@ export function createCurrents(U, keyDir) {
         col += uSilver * kkSpec * facing * (0.3 + 0.5 * smoothstep(0.6, 1.0, vS)) * prof * smoothstep(0.02, 0.25, vHt);
         float fresh = (1.0 - smoothstep(0.0, 0.12, vAge)) * smoothstep(0.15, 0.5, vHt);
         col = mix(col, uCopper * (0.5 + kkSpec), fresh * 0.75);
+        // voices: the ribbon takes its voice's colour while that voice sounds, flashes on onsets
+        vec3 vc = vVoiceCol * (0.3 + 0.9 * kkDiff * facing) * prof + uSilver * kkSpec * 0.35 * prof;
+        col = mix(col, vc, clamp(vVoice, 0.0, 1.0) * 0.85);
+        col += vVoiceCol * vFlash * 0.55 * prof;
         gl_FragColor = vec4(col * (0.35 + 0.65 * vE), 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -205,6 +219,7 @@ export function createCurrents(U, keyDir) {
         ['count', `${count} ribbons  ← Detail ${det.toFixed(2)}`],
         ['width', `${C.uWidth.value.toFixed(3)} units, ≥ 1 px on screen  ← Detail`],
         ['colour', 'cobalt by height · silver highlight along the ribbon · copper = loud newest rows'],
+        ['voices', `${P.voices.layout.currents} · each ribbon belongs to one voice (by ${P.voices.layout.currents === 'woven' ? 'its index' : P.voices.layout.currents === 'register' ? 'its anchor\'s frequency' : 'its anchor\'s height'}); colour = that voice's record along the ribbon; onsets widen (+35 %) and flash`],
       ];
     },
   };

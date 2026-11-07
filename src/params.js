@@ -6,7 +6,7 @@
 //  never write back into the field.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const VERSION = 'study-02/0.2';
+export const VERSION = 'study-02/0.2.2';
 
 export const N = 256;          // canonical field: 256 × 256 texels (= Strata grid verts per side)
 export const SIZE = 10;        // world size of the field, scene units
@@ -24,6 +24,7 @@ export const P = {
   attnLo: null,            // Hz, or null = lowest column (full range)
   attnHi: null,            // Hz, or null = highest column
   attnFloor: 0.2,          // weight outside the Attention range
+  testSignal: 'poly',      // built-in source: 'poly' (eight voices at different rates) or 'pulse' (study 02.1's)
 
   // Filter · feedback TOPs (the canonical field)
   flow: 1,                 // Translate: rows pushed back per simulation step
@@ -42,7 +43,34 @@ export const P = {
   currents: { treatment: 'orderly', radius: 5, flowMix: 1.0, bias: 0.22, length: 0.2, segments: 8 },
   sediment: { radius: 2, grid: '128x128', floor: 0.3, gap: 0.01, slices: 6 },
 
+  // Voices: eight frequency bands as separate voices (render only; the canonical field is untouched)
+  voices: {
+    amount: 0.6,           // the shelf fader: scales colour and motion together
+    layout: { strata: 'elevation', currents: 'woven', sediment: 'woven' },   // per study: 'register' | 'elevation' | 'woven'
+    color: 1.0,            // colour and glint, × amount
+    motion: 1.0,           // motion octaves, × amount
+    now: 0.3,              // 0 = the ground carries each voice back with its rows · 1 = everything answers the present
+    gains: [1, 1, 1, 1, 1, 1, 1, 1],
+    attack: 0.012,         // envelope attack half-life, s
+    releaseLow: 0.24,      // release half-life of the lowest band, s
+    releaseHigh: 0.06,     // … of the highest band (in between: log-interpolated)
+    onset: 1.8,            // onset threshold, × the band's recent average rise
+  },
+
   budget: 'balanced',      // drawing-buffer pixel budget
+};
+
+// The eight voices. Edges in Hz; each band is one voice.
+export const BAND_EDGES = [30, 60, 150, 400, 1000, 2500, 5000, 10000, 16000];
+export const BAND_NAMES = ['sub', 'bass', 'low mid', 'mid', 'upper mid', 'presence', 'brilliance', 'air'];
+export const NB = 8;
+export const LAYOUTS = { register: 0, elevation: 1, woven: 2 };
+
+// Per-study voice palettes, low band → high band.
+export const VOICE_PALETTES = {
+  strata:   ['#2e8077', '#3f9a8c', '#79ae88', '#bdb45c', '#d99a3e', '#cf6a35', '#b8453a', '#8e5aa0'],
+  currents: ['#2236a8', '#2557d6', '#2f8be0', '#38c1e8', '#9fe3f5', '#e8eef6', '#e6b57a', '#d07a3e'],
+  sediment: ['#2a3fbf', '#2f6fe8', '#33a8f0', '#3fd3e6', '#6fe0b8', '#e9e4c8', '#f2b45c', '#f07a3c'],
 };
 
 // Memory is a nominal half-life. The decay multiplier applied once per 60 Hz step:
@@ -77,7 +105,8 @@ export function assign(target, src) {
   for (const k of Object.keys(src)) {
     if (!(k in target)) continue;
     const v = src[k];
-    if (v && typeof v === 'object' && !Array.isArray(v) && target[k] && typeof target[k] === 'object') assign(target[k], v);
+    if (Array.isArray(v) && Array.isArray(target[k])) { v.forEach((x, i) => { if (i < target[k].length && typeof x === typeof target[k][i]) target[k][i] = x; }); }
+    else if (v && typeof v === 'object' && !Array.isArray(v) && target[k] && typeof target[k] === 'object') assign(target[k], v);
     else if (typeof v === typeof target[k] || target[k] === null || v === null) target[k] = v;
   }
 }

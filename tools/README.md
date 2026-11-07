@@ -17,7 +17,7 @@ Set `AG_CHROME=/path/to/chrome` to use a system Chrome, `AG_OUT` to change the o
 
 `verify.py` checks:
 
-1. **Timing.** The canonical field after 360 steps at 30, 60 and 120 Hz display schedules, compared with direct stepping (expected: identical).
+1. **Timing.** The canonical field and the voice record after 360 steps at 30, 60 and 120 Hz display schedules, compared with direct stepping (expected: identical).
 2. **Overload.** 30 frames at 10 Hz: each wants 6 steps, 4 run, 2 are dropped.
 3. **Continuity.** Switching Strata → Currents → Sediment → Strata leaves the field, the source position and the camera unchanged.
 4. **Transport.** Pause, Hold/Release, Restart, Clear memory, a denied microphone, a local WAV file, and back to the test signal.

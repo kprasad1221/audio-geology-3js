@@ -175,6 +175,27 @@
       <p class="explain" id="attnRes">bins of 46.9 Hz</p>
     </section>
 
+    <section class="mon mon-voices" aria-labelledby="voiH">
+      <div class="voi-head">
+        <h2 id="voiH">Voices <span class="explain">· 8 bands</span></h2>
+        <select id="voiceLayout" class="select mini" aria-label="Where the voices live">
+          <option value="register">Register</option>
+          <option value="elevation">Elevation</option>
+          <option value="woven">Woven</option>
+        </select>
+      </div>
+      <div class="voi-body">
+        <div class="voi-lanes" id="voiceLanes" aria-hidden="true"></div>
+        <div class="voi-box">
+          <canvas id="voiceScore" role="img" aria-label="Eight frequency bands over the same history as the Filter: older on the left, now on the right, with a live meter per band"></canvas>
+        </div>
+        <div class="voi-fader">
+          <div class="vbox"><input type="range" class="engraved" id="mVoices" min="0" max="1" step="0.01" aria-label="Voices amount"></div>
+          <output id="oVoices" for="mVoices">0.60</output>
+        </div>
+      </div>
+    </section>
+
     <section class="mon mon-filter" aria-labelledby="filH">
       <h2 id="filH">Filter <span class="explain">· feedback field</span></h2>
       <div class="heat">
@@ -198,7 +219,7 @@
         <button type="button" id="holdBtn" aria-pressed="false"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 7h10v2H3z"/></svg><span id="holdTxt">Hold</span></button>
       </div>
       <p class="status" id="status" aria-live="polite">The built-in test signal is shaping the field.</p>
-      <p class="micro study-tag">Study 02 · v0.2</p>
+      <p class="micro study-tag">Study 02 · v0.2.2 · Voices</p>
       <input id="fileInput" type="file" accept="audio/*" hidden>
     </div>
   </footer>
