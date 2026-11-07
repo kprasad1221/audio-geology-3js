@@ -1,65 +1,79 @@
 # Audio Geology 3JS
 
-A ferrofluid terrain that grows from sound.
+A geological instrument for visual music.
 
-This is the Ferrofluid terrain law from **Audio Geology**, a TouchDesigner terrain system, rebuilt in three.js as one HTML file with no build step.
+Sound becomes a field with memory, and the field becomes geology. This is **Audio Geology**, a TouchDesigner terrain system by Pixel Rhythms Labs, rebuilt for the browser in three.js with no build step.
 
-An audio spectrum is written into a 32-bit float texture one row at a time. A feedback loop pushes the field back by a row each frame, blurs it with a 3×3 kernel and runs it through a level stage. A 256 × 256 grid is displaced by that field, takes its normals from it, and is lit with a PBR material.
+**Study 02** keeps the solved core from study 01 (spectrum → 256 × 1 row → feedback field) and adds a render layer around it: three studies that read the same field in different ways, and an interface that shares their material.
 
-Depth on the terrain is age. The front row is this frame's signal. Each row further back has been through the kernel one more time, so older terrain is smoother and lower.
+| Study | What you see |
+|---|---|
+| **Strata** · mineral daylight | A cut specimen. Height contours are fixed to the field; deposit laminations travel with the rows, one per 0.25 s; the cut faces continue the same strata. |
+| **Currents** · cobalt observatory | Up to 4,096 ribbons that follow a slope direction derived from the field, over a dark supporting surface. |
+| **Sediment** · spectral specimen | 16,384 GPU-displaced grains, thin history slices at real ages, survey rulers in real Hz and seconds. One register carries spectral colour. |
+
+Switching study never touches the field, the audio position or the camera.
 
 ## Run it
 
-ES modules and the microphone need a local server, not a double-clicked file:
+ES modules and the microphone need a local server:
 
 ```
 npx http-server . -c-1
 ```
 
-Then open http://127.0.0.1:8080.
-
-There are three signal sources:
-
-- **Test signal**: a silent built-in spectrum (a kick at 120 BPM, a drifting tone, off-beat hats). It is on by default.
-- **Audio file**: any MP3, WAV or M4A. It loops.
-- **Microphone**: works when the page is served from localhost.
-
-Drag to orbit. Scroll or pinch to zoom.
+Then open http://127.0.0.1:8080. Study 01 is still on `main`.
 
 ## Signal → Filter → World
 
-Each stage of the TouchDesigner network maps to a part of `index.html`:
+```
+SIGNAL   source → spectrum → gain → lag → resample → Attention → 256 × 1 float row
+FILTER   H: canonical feedback field, 256 × 256 float, stepped at a fixed 60 Hz
+         D: derived field (smoothed height, ∂h/∂u, ∂h/∂v, curvature), rebuilt once per frame
+WORLD    the active study reads H and D
+```
 
-| TouchDesigner | In `index.html` |
+| TouchDesigner | Here |
 |---|---|
-| Audio File In + spectrum | Web Audio `AnalyserNode`, which also sums stereo to mono |
-| Math, Lag, Resample CHOPs | `cookSignal()`, plain JS over a `Float32Array` |
-| CHOP to TOP | a 256 × 1 float `DataTexture`, re-uploaded every frame |
-| Feedback TOP | two float render targets, swapped every frame (`cookFeedback()`) |
-| Translate → Blur/Convolve → Level → Composite | one fragment shader, four commented steps |
-| Grid SOP + displacement | a 256 × 256 `PlaneGeometry` moved in the vertex shader |
-| GLSL in a PBR MAT | `three-custom-shader-material` on `MeshStandardMaterial` |
-| Environment Light | `RoomEnvironment` through `PMREMGenerator` |
-| Custom parameters | Tweakpane |
-| The network cooking each frame | `animate()`, which calls Signal, then Filter, then World |
+| Audio File In + spectrum | Web Audio `AnalyserNode` (`src/audio.js`) |
+| Math, Lag, Resample CHOPs | `cookSignal()` in `src/signal.js` |
+| CHOP to TOP | a 256 × 1 float `DataTexture` |
+| Feedback TOP → Translate → Convolve → Level → Composite | `src/field.js`, one fragment shader, two targets swapped every step |
+| Analyse / Slope TOPs | the derived pass in `src/field.js` |
+| Grid SOP + displacement, Instancing, Point sprites | `src/world/strata.js`, `currents.js`, `sediment.js` |
+| Custom parameters | the instrument edge and Inspect (Tweakpane) |
+| Timeline at a fixed cook rate | `src/clock.js` |
 
-The two readouts at the bottom left show the signal row and the live feedback field, next to the terrain they produce.
+## Controls
 
-## Parameters
-
-| Group | Parameter | What it does |
+| Control | What it does | Range · default |
 |---|---|---|
-| Signal | gain | scales the spectrum before it enters the field |
-| | lag | one-pole smoothing per bin; higher is slower and calmer |
-| | lin → log | how 512 bins are spread across 256 columns; log gives each octave equal width |
-| Filter | translate | rows of history pushed back per frame; 0 holds the field in place |
-| | blur | mixes the kernel from identity to a 3×3 gaussian |
-| | sample step | spacing between kernel taps; larger steps give banding |
-| | brightness | how much of the field survives each frame |
-| | gamma, contrast | the rest of the level stage, applied every frame, so their effect compounds with age |
-| World | height | displacement scale |
-| | metal | metalness and gloss together; high values read as ferrofluid |
-| | wireframe | shows the grid; one vertex per field pixel |
+| **Memory** | nominal half-life of the feedback decay: `decay = 2^(−1 / (60 · halfLife))` per step | 0.25–12 s · 2.88 s (exactly study 01's 0.996) |
+| **Weathering** | kernel blend, identity → 3 × 3 gaussian | 0–1 · 0.75 |
+| **Relief** | displacement height | 0–5 · 2.4 |
+| **Detail** | render-only, per study: Strata contour contrast + fine normals; Currents ribbon count + width; Sediment grain size + dust | 0–1 · 0.5 |
+| **Light** | key-light azimuth at a fixed elevation | 0–359° · 215° |
+| **Attention** | weights a frequency range before the field, with ⅓-octave tapers; shown on both monitors | full range |
+| **Play / Pause** | file and world together; the test signal pauses its own clock | |
+| **Hold** | freezes the field while audio and the signal monitor continue; Release resumes with no catch-up burst | |
+| **Restart** | source to the start, clears H, D and smoothing; keeps camera and settings | |
+| **Clear memory** (Inspect) | clears the field and smoothing without seeking | |
+| **Survey / Detail / Score** | camera bookmarks; Score lays the history axis horizontally | |
+| **Perform** | hides explanatory labels; source and transport stay | |
+
+Inspect shows the exact parameters, the live mapping of the active study, actual texture formats, a draw/triangle readout, a 60-second frame-time capture, and preset export/import.
+
+## Timing
+
+Study 01 cooked once per display frame, so on a 120 Hz screen the field evolved twice as fast and its history window was half as long. Study 02 steps the field at a fixed 60 Hz. At most 4 steps run per display frame; a slower frame drops the extra steps instead of bursting to catch up. The canonical field after 360 steps is bit-identical at 30, 60 and 120 Hz displays (see `tools/`).
+
+## Performance
+
+Budgets, not measurements: the canonical field stays 256 × 256; Strata draws about 132 k triangles, Currents about 65 k at Detail 0.5, Sediment 16,384 points. A normal frame is 5–6 draw calls including the feedback, derived and preview passes. The drawing buffer is capped by a pixel budget (Light 1 MP, Balanced 2 MP, High 3.5 MP; Inspect → Render). Measure frame times on your own device with Inspect → **Measure 60 s**.
+
+## Tools
+
+`tools/` holds the headless checks used for this study (Python + Playwright, a fake clock, software WebGL): timing invariance, overload policy, study-switch continuity, transport states, and fixed-excerpt captures. See `tools/README.md`.
 
 ## Built with
 
@@ -67,7 +81,7 @@ The two readouts at the bottom left show the signal row and the live feedback fi
 - [three-custom-shader-material](https://github.com/FarazzShaikh/THREE-CustomShaderMaterial) 6.4.0 (vanilla build)
 - [Tweakpane](https://tweakpane.github.io/docs/) 4.0.5
 
-All three load from jsDelivr through an import map in `index.html`.
+All three load from jsDelivr through the import map in `index.html`.
 
 ## License
 

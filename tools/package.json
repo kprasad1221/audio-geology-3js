@@ -1,0 +1,10 @@
+{
+  "name": "audio-geology-3js-tools",
+  "private": true,
+  "description": "Local copies of the import-map libraries so the headless checks run offline.",
+  "dependencies": {
+    "three": "0.186.0",
+    "three-custom-shader-material": "6.4.0",
+    "tweakpane": "4.0.5"
+  }
+}
