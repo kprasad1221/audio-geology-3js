@@ -129,7 +129,7 @@ export function createInspect(app) {
   // ── Presets ──────────────────────────────────────────────────────────────
   $('exportBtn').addEventListener('click', () => {
     const data = { app: 'audio-geology-3js', version: VERSION, study: app.study(), params: snapshot(),
-      palette: { strata: 'mineral daylight', currents: 'cobalt observatory', sediment: 'spectral specimen' }[app.study()],
+      palette: { strata: 'mineral daylight', currents: P.currents.look === 'original' ? 'cobalt observatory' : 'stellar-tide-court.take-a', sediment: 'spectral specimen' }[app.study()],
       camera: app.cameraState() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');

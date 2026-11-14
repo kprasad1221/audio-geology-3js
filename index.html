@@ -54,6 +54,12 @@
       <button type="button" data-cam="detail" aria-pressed="false">Detail</button>
       <button type="button" data-cam="score" aria-pressed="false">Score</button>
     </div>
+    <div class="current-looks" id="currentLooks" role="group" aria-label="Currents comparison" hidden>
+      <button type="button" data-look="original" aria-pressed="true">Original</button>
+      <button type="button" data-look="palette" aria-pressed="false">Palette</button>
+      <button type="button" data-look="counterpoint" aria-pressed="false">Call + reply</button>
+      <label title="Score tempo, set by hand">BPM <input id="currentTempo" aria-label="Score tempo in beats per minute" type="number" min="40" max="240" step="1" value="120"></label>
+    </div>
     <p class="gl-error" id="glError" hidden></p>
 
     <aside class="inspect" id="inspect" aria-label="Inspect" hidden>

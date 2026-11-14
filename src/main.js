@@ -20,6 +20,7 @@ import { createField } from './field.js';
 import { createStage, createSurvey } from './world/stage.js';
 import { createStrata } from './world/strata.js';
 import { createCurrents } from './world/currents.js';
+import { CURRENT_LOOKS, scoreTempo } from './world/current-score.js';
 import { createSediment } from './world/sediment.js';
 import { erode, engrave } from './ui/geology.js';
 import { createControls } from './ui/controls.js';
@@ -137,11 +138,32 @@ const app = {
 };
 const inspect = createInspect(app);
 
+const lookButtons = $('currentLooks').querySelectorAll('[data-look]');
+function syncCurrentLook() {
+  const c = P.currents;
+  if (!CURRENT_LOOKS.includes(c.look)) c.look = 'original';
+  c.bpm = scoreTempo(c.bpm);
+  for (const b of lookButtons) b.setAttribute('aria-pressed', String(b.dataset.look === c.look));
+  $('currentTempo').value = c.bpm;
+  $('currentTempo').disabled = c.look !== 'counterpoint';
+}
+for (const b of lookButtons) b.addEventListener('click', () => {
+  P.currents.look = b.dataset.look;
+  syncCurrentLook(); inspect.refreshStatic();
+});
+$('currentTempo').addEventListener('change', e => {
+  const bpm = e.target.valueAsNumber;
+  if (Number.isFinite(bpm)) P.currents.bpm = scoreTempo(Math.round(bpm));
+  syncCurrentLook(); inspect.refreshStatic();
+});
+
 // ── Study switching ─────────────────────────────────────────────────────────
 function setStudy(name) {
   if (!studies[name]) return;
   study = name;
   root.dataset.study = name;
+  $('currentLooks').hidden = name !== 'currents';
+  syncCurrentLook();
   for (const [k, s] of Object.entries(studies)) s.group.visible = k === name;
   document.querySelectorAll('.rail button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.study === name)));
   const L = LOOKS[name];
@@ -195,7 +217,7 @@ function run() { state.running = true; sources.play(); clock.reset(); syncTransp
 function pause() { state.running = false; sources.pause(); syncTransport(); }
 
 srcBtn.test.addEventListener('click', () => {
-  sources.useTest(); markSource(); syncRate(); run();
+  sources.useTest(); studies.currents.score.reset(); markSource(); syncRate(); run();
   app.status('Test signal: a kick at 120 BPM, a drifting tone and off-beat hats, generated in the page.');
 });
 srcBtn.file.addEventListener('click', () => $('fileInput').click());
@@ -204,6 +226,7 @@ $('fileInput').addEventListener('change', async () => {
   app.status(`Decoding ${f.name}…`);
   try {
     const buf = await sources.useFile(f);
+    studies.currents.score.reset();
     markSource(); syncRate(); run();
     app.status(`${f.name} · ${buf.numberOfChannels === 2 ? 'stereo summed to mono' : 'mono'} · ${(buf.sampleRate / 1000).toFixed(1)} kHz · ${buf.duration.toFixed(1)} s, looping · decoded locally`);
   } catch (e) {
@@ -216,6 +239,7 @@ srcBtn.mic.addEventListener('click', async () => {
   app.status('Asking for microphone access…');
   try {
     await sources.useMic();
+    studies.currents.score.reset();
     markSource(); syncRate(); run();
     app.status('Microphone live (not sent to the speakers). Hum, clap or play near it.');
   } catch (e) {
@@ -232,6 +256,7 @@ $('holdBtn').addEventListener('click', () => {
 });
 function clearMemory() {
   field.clear(); clearSignalState(); clearBands(); clock.reset();
+  studies.currents.score.reset();
   needDerive = true; signalDirty = true; previewDirty = true; voicesDirty = true;
 }
 $('restartBtn').addEventListener('click', () => {
@@ -273,7 +298,10 @@ addEventListener('keydown', e => {
 
 // ── Presets ─────────────────────────────────────────────────────────────────
 function applyPreset(data) {
+  // Older exported scenes and authored Currents presets use the original material.
+  if ((data.study === 'currents' || data.params?.currents) && !data.params?.currents?.look) P.currents.look = 'original';
   if (data.params) assign(P, data.params);
+  syncCurrentLook();
   if (data.study) setStudy(data.study);
   if (data.camera) stage.goTo(typeof data.camera === 'string' ? data.camera : data.camera);
   inspect.syncTreatment();
@@ -360,7 +388,10 @@ function simulate(n) {
     const low = sources.readLow(bands.lowBins);  // VOICES: the long FFT for the low bands (real audio only)
     cookBands(signal.bins, signal.sampleRate / FFT_SIZE, low ? bands.lowBins : null, sources.lowBinHz);
     sources.advance(SIM_DT);
-    if (!state.held) { field.step(); depositBands(SIM_DT); U.uSimSteps.value++; }   // FILTER (frozen while held)
+    if (!state.held) {
+      field.step(); depositBands(SIM_DT); U.uSimSteps.value++;
+      studies.currents.score.advance(sources.position(), SIM_DT, P.currents.bpm, bands, P.voices.gains);
+    }
   }
   if (n > 0) {
     signalDirty = true; voicesDirty = true;
@@ -406,7 +437,11 @@ function frame(now = performance.now()) {
 // ── Boot ────────────────────────────────────────────────────────────────────
 signal.sampleRate = sources.sampleRate;
 rebuildWeights(); buildSurvey(); monitors.layoutHzTicks(); setVoiceEdges(VU, hzToColumn);
-setStudy('strata'); stage.setLight(P.light); syncTransport(); markSource();
+const query = new URLSearchParams(location.search);
+if (CURRENT_LOOKS.includes(query.get('look'))) P.currents.look = query.get('look');
+if (query.get('bpm')) P.currents.bpm = scoreTempo(Number(query.get('bpm')));
+setStudy(Object.hasOwn(studies, query.get('study')) ? query.get('study') : 'strata');
+stage.setLight(P.light); syncTransport(); markSource();
 resize();
 requestAnimationFrame(frame);
 

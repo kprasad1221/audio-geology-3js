@@ -40,7 +40,8 @@ export const P = {
   detail: { strata: 0.5, currents: 0.5, sediment: 0.5 },
 
   strata:   { radius: 3, bands: 24, broad: 0.35 },
-  currents: { treatment: 'orderly', radius: 5, flowMix: 1.0, bias: 0.22, length: 0.2, segments: 8 },
+  currents: { treatment: 'orderly', radius: 5, flowMix: 1.0, bias: 0.22, length: 0.2, segments: 8,
+    look: 'original', bpm: 120 },
   sediment: { radius: 2, grid: '128x128', floor: 0.3, gap: 0.01, slices: 6 },
 
   // Voices: eight frequency bands as separate voices (render only; the canonical field is untouched)

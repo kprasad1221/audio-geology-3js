@@ -21,6 +21,7 @@ import CustomShaderMaterial from 'three-custom-shader-material/vanilla';
 import { P, SIZE, CURRENTS_TREATMENTS } from '../params.js';
 import { makeGrid } from './stage.js';
 import { VOICES_GLSL } from './voices.js';
+import { CURRENT_LOOKS, createCurrentScore, currentEnvelope, currentRamps } from './current-score.js';
 
 const MAX_RIBBONS = 4096;
 const SEG_MAX = 8;
@@ -53,7 +54,9 @@ function makeRibbons() {
 
 export function createCurrents(U, keyDir) {
   const group = new THREE.Group();
+  const score = createCurrentScore();
   const C = {
+    uLook: { value: 0 }, uRamps: { value: currentRamps() }, uGesture: { value: score.gesture },
     uFlowMix: { value: 1 }, uBias: { value: 0.22 }, uLen: { value: 0.1 }, uSegs: { value: 8 },
     uWidth: { value: 0.035 }, uMinPx: { value: 1.0 }, uViewport: { value: new THREE.Vector2(1, 1) },
     uKeyDir: { value: keyDir }, uLift: { value: 0.035 },
@@ -101,12 +104,16 @@ export function createCurrents(U, keyDir) {
       uniform sampler2D uD;
       uniform float uRelief, uSize, uFlowMix, uBias, uLen, uSegs, uWidth, uMinPx, uLift;
       uniform vec2 uViewport;
+      uniform int uLook;
+      uniform vec4 uGesture;
+      varying vec2 vPacket;
       attribute float aS, aSide, aSeed;
       attribute vec2 aAnchor;
       varying vec3 vT, vN, vW, vVoiceCol;
       varying float vS, vE, vAge, vHt, vSide, vVoice, vFlash;
       ${VOICES_GLSL}
 
+      ${currentEnvelope}
       vec2 flowDir(vec2 p) {
         vec2 g = texture2D(uD, p).gb;
         float m = length(g);
@@ -144,8 +151,20 @@ export function createCurrents(U, keyDir) {
         int vk = voiceIndex(aAnchor.x, voiceHN(texture2D(uD, aAnchor).r), aSeed);
         vec2 lo = voiceAt(vk, p.y);
         vVoiceCol = uBandCol[vk]; vVoice = lo.x * uVoiceColor; vFlash = lo.y * uVoiceColor;
+        vPacket = vec2(0.0);
+        if (uLook == 2) {
+          // Two beds bend across different frequency registers. Distance follows the field's history.
+          float bend = 0.065 * sin(6.2832 * (p.y - 0.14));
+          vec2 lane = 1.0 - smoothstep(vec2(0.025), vec2(0.125),
+            abs(vec2(p.x - 0.33 - bend, p.x - 0.66 + bend)));
+          vPacket = lane * vec2(packet(uGesture.x, p.y), packet(uGesture.z, 1.0 - p.y))
+            * uGesture.yw * smoothstep(0.001, 0.032, d.r) * (0.53 + 0.47 * aSeed);
+        }
+        float accent = max(vPacket.x, vPacket.y);
+        e = max(e, accent);
         float halfW = uWidth * e * taper * (0.75 + 0.5 * aSeed) * (1.0 + 0.35 * vFlash);
-        vec3 c = toWorld(p, d.r + m.x) + N * uLift;
+        halfW *= 1.0 + 0.95 * accent;
+        vec3 c = toWorld(p, d.r + m.x) + N * (uLift + 0.12 * accent);
         vec3 w = c + B * aSide * halfW;
         // Keep a minimum on-screen width so thin ribbons never shimmer.
         vec4 cc = projectionMatrix * modelViewMatrix * vec4(c, 1.0);
@@ -159,6 +178,9 @@ export function createCurrents(U, keyDir) {
       }`,
     fragmentShader: /* glsl */`
       uniform vec3 uKeyDir, uDeep, uCobalt, uSilver, uCopper;
+      uniform int uLook;
+      uniform sampler2D uRamps;
+      varying vec2 vPacket;
       varying vec3 vT, vN, vW, vVoiceCol;
       varying float vS, vE, vAge, vHt, vSide, vVoice, vFlash;
       void main() {
@@ -179,6 +201,19 @@ export function createCurrents(U, keyDir) {
         vec3 vc = vVoiceCol * (0.3 + 0.9 * kkDiff * facing) * prof + uSilver * kkSpec * 0.35 * prof;
         col = mix(col, vc, clamp(vVoice, 0.0, 1.0) * 0.85);
         col += vVoiceCol * vFlash * 0.55 * prof;
+        if (uLook > 0) {
+          float height = smoothstep(0.005, 0.55, vHt);
+          vec3 water = texture2D(uRamps, vec2(0.22 + 0.61 * height, 1.0 / 6.0)).rgb;
+          vec3 filament = texture2D(uRamps, vec2(clamp(0.27 + 0.43 * vVoice + 0.3 * kkSpec, 0.0, 1.0), 0.5)).rgb;
+          col = water * (0.4 + 0.78 * kkDiff * facing) * prof;
+          col += filament * (0.19 * vVoice + 0.35 * vFlash) * prof;
+          col += texture2D(uRamps, vec2(0.90, 0.5)).rgb * (0.11 + 0.43 * vS) * kkSpec * height * prof;
+          if (uLook == 2) {
+            vec3 silver = texture2D(uRamps, vec2(0.44 + 0.56 * vPacket.x, 0.5)).rgb;
+            vec3 gold = texture2D(uRamps, vec2(clamp(0.36 + 0.48 * vPacket.y, 0.0, 1.0), 5.0 / 6.0)).rgb;
+            col += (1.8 * silver * vPacket.x + 2.1 * gold * vPacket.y) * prof * (0.55 + 0.45 * kkDiff);
+          }
+        }
         gl_FragColor = vec4(col * (0.35 + 0.65 * vE), 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -192,12 +227,13 @@ export function createCurrents(U, keyDir) {
 
   let count = 2048;
   return {
-    name: 'currents', group,
+    name: 'currents', group, score,
     radius: () => P.currents.radius,
     shadow: { y: -0.02, opacity: 0.0 },
     setViewport(w, h, pr = 1) { C.uViewport.value.set(w, h); C.uMinPx.value = Math.max(1, 0.9 * pr); },
     update() {
       const det = P.detail.currents, c = P.currents, t = CURRENTS_TREATMENTS[c.treatment] || CURRENTS_TREATMENTS.orderly;
+      C.uLook.value = CURRENT_LOOKS.indexOf(c.look);
       C.uFlowMix.value = c.flowMix; C.uBias.value = c.bias; C.uLen.value = c.length;
       C.uSegs.value = Math.max(2, Math.min(SEG_MAX, Math.round(c.segments)));
       count = Math.min(MAX_RIBBONS, Math.round(1024 * Math.pow(4, det) * t.density));
@@ -218,7 +254,8 @@ export function createCurrents(U, keyDir) {
         ['path', `${C.uSegs.value} RK2 steps, length ${c.length.toFixed(3)} uv`],
         ['count', `${count} ribbons  ← Detail ${det.toFixed(2)}`],
         ['width', `${C.uWidth.value.toFixed(3)} units, ≥ 1 px on screen  ← Detail`],
-        ['colour', 'cobalt by height · silver highlight along the ribbon · copper = loud newest rows'],
+        ['colour', c.look === 'original' ? 'cobalt by height · silver highlight along the ribbon · copper = loud newest rows' : 'Tide Court water by height · sampled filament on lit crests and sounding voices'],
+        ...(c.look === 'counterpoint' ? [['score', `call every four beats at ${c.bpm} BPM · strength from sub, bass and low mid · inlay reply one beat later, toward newer rows`]] : []),
         ['voices', `${P.voices.layout.currents} · each ribbon belongs to one voice (by ${P.voices.layout.currents === 'woven' ? 'its index' : P.voices.layout.currents === 'register' ? 'its anchor\'s frequency' : 'its anchor\'s height'}); colour = that voice's record along the ribbon; onsets widen (+35 %) and flash`],
       ];
     },
