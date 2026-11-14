@@ -26,6 +26,22 @@ npx http-server . -c-1
 
 Then open http://127.0.0.1:8080. Study 01 is still on `main`.
 
+### Currents comparison
+
+Open [Currents with call and reply](http://127.0.0.1:8080/?study=currents&look=counterpoint&bpm=144) or choose **Currents** in the study rail. **Original**, **Palette**, and **Call + reply** switch in place while the track plays. Hold freezes the world for a closer comparison. BPM sets the gesture timing by hand. The built-in test runs at 120 BPM. The Bell Vault comparison uses 144.
+
+![Original, Palette, and Call + reply on one Bell Vault frame at 5.75 seconds](docs/currents-counterpoint/bell-vault-5.75s.jpg)
+
+| Look | What controls the ribbons |
+|---|---|
+| Original | The Study 02.2 cobalt material, silver directional highlights and existing eight-band voice colors. |
+| Palette | Water and filament ramps sampled from the Stellar Tide Court Krea clip. Height colors the water, and voice activity and the lighting reveal filament highlights. |
+| Call + reply | Every four beats a cyan-to-silver crest travels toward older rows. One beat later, a gold inlay crest travels toward newer rows on a second ribbon bed. The existing sub, bass and low-mid levels weight the call when it starts. The reply inherits 85% of that strength. |
+
+**Fixed-passage check.** The comparison used the Bell Vault Daydream track from 5.00 through 10.00 seconds. Each pair of renders used the same field, camera, spectrum and source time. At 5.75 s both crests are visible on separate beds. By 6.37 s the silver crest has finished and the reply is ending. The palette alone makes the quiet ground darker and less varied than Original. The score makes the exchange legible, though it repeats on the chosen grid across changes in the arrangement.
+
+**Portable source.** `src/shared/score.js`, `src/shared/palette.js` and `tools/sample_palette.py` match the [Living Particles source](https://github.com/kprasad1221/Living-Particles-3js/tree/c654ae403c5bece4822dd38024228c1fc468acd4). The sampler reproduced the checked-in palette byte for byte from the [sampling spec](palettes/sources/stellar-tide-court.take-a.spec.json) and its linked take. The two paths, their directions, the band weighting and the ribbon material were composed for Audio Geology. Pitch and beat recognition are outside these three modules.
+
 ## Signal → Filter → World
 
 ```

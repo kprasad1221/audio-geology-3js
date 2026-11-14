@@ -150,6 +150,20 @@ h1 { font-weight: 400; font-size: clamp(30px, 3.1vw, 44px); line-height: 1; lett
   font-size: 11px; letter-spacing: .06em; color: var(--muted);
 }
 .bookmarks button[aria-pressed="true"] { color: var(--ink); background: var(--face-2); box-shadow: inset 0 0 0 1px var(--faint); }
+.current-looks {
+  position: absolute; right: 18px; bottom: 14px; display: flex; align-items: center;
+  padding: 3px; gap: 2px; border: 1px solid var(--faint); border-radius: 12px;
+  background: var(--face); font: 11px var(--f-mono); color: var(--muted);
+}
+.current-looks[hidden] { display: none; }
+.current-looks button, .current-looks input { font: inherit; color: inherit; }
+.current-looks button { min-height: 40px; border: 0; padding: 0 10px; border-radius: 8px; background: transparent; cursor: pointer; }
+.current-looks button[aria-pressed="true"] { color: var(--ink); background: var(--face-2); box-shadow: inset 0 0 0 1px var(--faint); }
+.current-looks label { margin: 0 5px; }
+.current-looks input { width: 7ch; min-height: 32px; padding: 0 2px; background: var(--face-2); border: 1px solid var(--faint); border-radius: 4px; color: var(--ink); }
+@media (max-width: 640px) {
+  .current-looks { left: max(18px, env(safe-area-inset-left)); right: auto; bottom: 66px; }
+}
 .gl-error { position: absolute; inset: 30% 10% auto; font: 14px/1.5 var(--f-mono); color: var(--ink); text-align: center; }
 
 /* ── Edge: the instrument ──────────────────────────────────────────────────── */
